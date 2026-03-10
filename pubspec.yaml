@@ -1,7 +1,7 @@
 name: zebra_scanner
 description: "A new Flutter plugin project."
 version: 0.0.1
-homepage:
+homepage: https://github.com/armin1440/zebra_scanner
 
 environment:
   sdk: ^3.11.0
