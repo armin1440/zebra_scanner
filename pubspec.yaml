@@ -1,5 +1,5 @@
 name: zebra_scanner
-description: "A new Flutter plugin project."
+description: "A Flutter plugin for seamlessly communicating with and controlling Zebra Bluetooth BLE/SPP barcode scanners natively on iOS and Android."
 version: 0.0.1
 homepage: https://github.com/armin1440/zebra_scanner
 
