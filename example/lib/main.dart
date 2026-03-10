@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:async';
 
 import 'package:flutter/services.dart';
-import 'package:zebra_scanner/zebra_scanner.dart';
+import 'package:zebra_handheld_scanner/zebra_handheld_scanner.dart';
 
 void main() {
   runApp(const MaterialApp(home: MyApp()));
@@ -18,7 +18,7 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   String _platformVersion = 'Unknown';
-  final _zebraScannerPlugin = ZebraScanner();
+  final _zebraScannerPlugin = ZebraHandheldScanner();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _specCodeController = TextEditingController();
 

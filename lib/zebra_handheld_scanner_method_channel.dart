@@ -1,13 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import 'zebra_scanner_platform_interface.dart';
+import 'zebra_handheld_scanner_platform_interface.dart';
 
-/// An implementation of [ZebraScannerPlatform] that uses method channels.
-class MethodChannelZebraScanner extends ZebraScannerPlatform {
+/// An implementation of [ZebraHandheldScannerPlatform] that uses method channels.
+class MethodChannelZebraHandheldScanner extends ZebraHandheldScannerPlatform {
   /// The method channel used to interact with the native platform.
   @visibleForTesting
-  final methodChannel = const MethodChannel('zebra_scanner');
+  final methodChannel = const MethodChannel('zebra_handheld_scanner');
 
   @override
   Future<String?> getPlatformVersion() async {

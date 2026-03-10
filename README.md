@@ -1,6 +1,6 @@
-# zebra_scanner
+# zebra_handheld_scanner
 
-A Flutter plugin for easily integrating and communicating with Zebra Bluetooth BLE/SPP barcode scanners natively on iOS and Android.
+A Flutter plugin for easily integrating and communicating with Zebra Bluetooth BLE/SPP handheld barcode scanners natively on iOS and Android.
 
 This plugin abstracts away the complex underlying native Bluetooth connection logic and exposes a clean, easy-to-use Dart API to discover, connect, listen to barcode scans, and send configuration commands to Zebra scanners.
 
@@ -17,11 +17,11 @@ This plugin abstracts away the complex underlying native Bluetooth connection lo
 
 ### 1. Installation
 
-Add `zebra_scanner` to your `pubspec.yaml` dependencies:
+Add `zebra_handheld_scanner` to your `pubspec.yaml` dependencies:
 
 ```yaml
 dependencies:
-  zebra_scanner: ^0.0.1
+  zebra_handheld_scanner: ^0.0.1
 ```
 
 ### 2. Permissions
@@ -54,9 +54,9 @@ You must include the following Bluetooth usage descriptions in your app's `Info.
 First, initialize the plugin and request the necessary Bluetooth permissions from the user. Set up your connection listeners so your UI updates when the scanner connects/disconnects or scans a barcode.
 
 ```dart
-import 'package:zebra_scanner/zebra_scanner.dart';
+import 'package:zebra_handheld_scanner/zebra_handheld_scanner.dart';
 
-final _zebraScannerPlugin = ZebraScanner();
+final _zebraScannerPlugin = ZebraHandheldScanner();
 
 @override
 void initState() {

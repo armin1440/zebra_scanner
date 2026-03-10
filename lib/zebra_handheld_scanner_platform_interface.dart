@@ -1,24 +1,24 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
-import 'zebra_scanner_method_channel.dart';
+import 'zebra_handheld_scanner_method_channel.dart';
 
-abstract class ZebraScannerPlatform extends PlatformInterface {
-  /// Constructs a ZebraScannerPlatform.
-  ZebraScannerPlatform() : super(token: _token);
+abstract class ZebraHandheldScannerPlatform extends PlatformInterface {
+  /// Constructs a ZebraHandheldScannerPlatform.
+  ZebraHandheldScannerPlatform() : super(token: _token);
 
   static final Object _token = Object();
 
-  static ZebraScannerPlatform _instance = MethodChannelZebraScanner();
+  static ZebraHandheldScannerPlatform _instance = MethodChannelZebraHandheldScanner();
 
-  /// The default instance of [ZebraScannerPlatform] to use.
+  /// The default instance of [ZebraHandheldScannerPlatform] to use.
   ///
-  /// Defaults to [MethodChannelZebraScanner].
-  static ZebraScannerPlatform get instance => _instance;
+  /// Defaults to [MethodChannelZebraHandheldScanner].
+  static ZebraHandheldScannerPlatform get instance => _instance;
 
   /// Platform-specific implementations should set this with their own
-  /// platform-specific class that extends [ZebraScannerPlatform] when
+  /// platform-specific class that extends [ZebraHandheldScannerPlatform] when
   /// they register themselves.
-  static set instance(ZebraScannerPlatform instance) {
+  static set instance(ZebraHandheldScannerPlatform instance) {
     PlatformInterface.verifyToken(instance, _token);
     _instance = instance;
   }

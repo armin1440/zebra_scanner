@@ -1,4 +1,4 @@
-import 'zebra_scanner_platform_interface.dart';
+import 'zebra_handheld_scanner_platform_interface.dart';
 import 'package:flutter/services.dart';
 
 /// Predefined buzzer sound types for the scanner
@@ -41,51 +41,51 @@ enum LedColor {
   const LedColor(this.hexCode);
 }
 
-class ZebraScanner {
+class ZebraHandheldScanner {
   Future<String?> getPlatformVersion() {
-    return ZebraScannerPlatform.instance.getPlatformVersion();
+    return ZebraHandheldScannerPlatform.instance.getPlatformVersion();
   }
 
   /// Requests the necessary Bluetooth and Location permissions natively.
   /// Returns [true] if all necessary permissions are granted.
   Future<bool> requestPermissions() {
-    return ZebraScannerPlatform.instance.requestPermissions();
+    return ZebraHandheldScannerPlatform.instance.requestPermissions();
   }
 
   /// Initiates BLE auto-connection and returns a QR code string.
-  /// Listen to the 'zebra_scanner' method channel for connection events.
+  /// Listen to the 'zebra_handheld_scanner' method channel for connection events.
   Future<String> autoConnectBle() {
-    return ZebraScannerPlatform.instance.autoConnectBle();
+    return ZebraHandheldScannerPlatform.instance.autoConnectBle();
   }
 
   /// Sends an arbitrary hex command string (e.g. "ba0515") to the connected scanner.
   Future<void> sendCommand(String command) {
-    return ZebraScannerPlatform.instance.sendCommand(command);
+    return ZebraHandheldScannerPlatform.instance.sendCommand(command);
   }
 
   /// Gets the device name of the connected scanner.
   Future<String?> getDeviceName() {
-    return ZebraScannerPlatform.instance.getDeviceName();
+    return ZebraHandheldScannerPlatform.instance.getDeviceName();
   }
 
   /// Gets the version of the connected scanner.
   Future<String?> getVersion() {
-    return ZebraScannerPlatform.instance.getVersion();
+    return ZebraHandheldScannerPlatform.instance.getVersion();
   }
 
   /// Gets the battery level (0-100) of the connected scanner.
   Future<int?> getBatteryLevel() {
-    return ZebraScannerPlatform.instance.getBatteryLevel();
+    return ZebraHandheldScannerPlatform.instance.getBatteryLevel();
   }
 
   /// Sets a new device name for the connected scanner.
   Future<void> setDeviceName(String name) {
-    return ZebraScannerPlatform.instance.setDeviceName(name);
+    return ZebraHandheldScannerPlatform.instance.setDeviceName(name);
   }
 
   /// Disconnects from the current scanner.
   Future<void> disconnect() {
-    return ZebraScannerPlatform.instance.disconnect();
+    return ZebraHandheldScannerPlatform.instance.disconnect();
   }
 
   /// Sets the scanner's speaker buzzer sound type (OP_SET_SPEAKER: 0x07).
@@ -130,7 +130,7 @@ class ZebraScanner {
     Function(int)? onScannerAutoConnectStep,
     Function(String)? onBarcodeScanned,
   }) {
-    const MethodChannel('zebra_scanner').setMethodCallHandler((call) async {
+    const MethodChannel('zebra_handheld_scanner').setMethodCallHandler((call) async {
       switch (call.method) {
         case 'onScannerConnected':
           if (onScannerConnected != null) {
