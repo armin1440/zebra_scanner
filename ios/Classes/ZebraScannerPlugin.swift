@@ -26,7 +26,7 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
     }
 
     public static func register(with registrar: FlutterPluginRegistrar) {
-        let channel = FlutterMethodChannel(name: "zebra_scanner", binaryMessenger: registrar.messenger())
+        let channel = FlutterMethodChannel(name: "zebra_handheld_scanner", binaryMessenger: registrar.messenger())
         let instance = ZebraScannerPlugin(channel: channel)
         registrar.addMethodCallDelegate(instance, channel: channel)
     }

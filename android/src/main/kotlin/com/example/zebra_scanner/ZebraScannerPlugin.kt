@@ -28,7 +28,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
     private val PERMISSION_REQUEST_CODE = 999
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
-        channel = MethodChannel(flutterPluginBinding.binaryMessenger, "zebra_scanner")
+        channel = MethodChannel(flutterPluginBinding.binaryMessenger, "zebra_handheld_scanner")
         channel.setMethodCallHandler(this)
     }
 
