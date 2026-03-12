@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -26,6 +27,8 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
     private var activity: Activity? = null
     private var pendingPermissionResult: Result? = null
     private val PERMISSION_REQUEST_CODE = 999
+    private var lastBleQrCode: String? = null
+    private var isAutoConnectBleRunning = false
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "zebra_handheld_scanner")
@@ -151,35 +154,112 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
     }
 
     private fun autoConnectBle(result: Result) {
-        val qrCode = ScannerAutoService.ble({ success, device ->
-            Handler(Looper.getMainLooper()).post {
-                if (success && device != null) {
-                    val scanner = ScannerBleDevice.from(device)
-                    scanner.connect { connectSuccess, _ ->
-                        Handler(Looper.getMainLooper()).post {
-                            if (connectSuccess) {
-                                connectedDevice = scanner
-                                setupDeviceDataListener(scanner)
-                                channel.invokeMethod("onScannerConnected", true)
-                            } else {
-                                channel.invokeMethod("onScannerConnected", false)
-                            }
-                        }
-                    }
-                } else {
-                    channel.invokeMethod("onScannerConnected", false)
+        Log.d("BLE_AUTO", "autoConnectBle() started")
+
+        if (isAutoConnectBleRunning) {
+            Log.w("BLE_AUTO", "autoConnectBle() ignored because a previous call is still running")
+
+            // Return cached QR if available
+            lastBleQrCode?.let {
+                Log.d("BLE_AUTO", "Returning cached QR code while call is already running")
+                result.success(it)
+                return
+            }
+
+            result.error("BUSY", "autoConnectBle is already running", null)
+            return
+        }
+
+        isAutoConnectBleRunning = true
+
+        try {
+            // Optional: clean previous device state before requesting a new QR
+            connectedDevice?.let { device ->
+                try {
+                    Log.d("BLE_AUTO", "Disconnecting previous connected device before generating QR")
+                    device.onData(null)
+                    device.disconnect()
+                } catch (e: Exception) {
+                    Log.e("BLE_AUTO", "Error while disconnecting previous device", e)
+                } finally {
+                    connectedDevice = null
                 }
             }
-        }, { step ->
-            Handler(Looper.getMainLooper()).post {
-                channel.invokeMethod("onScannerAutoConnectStep", step)
-            }
-        })
 
-        if (qrCode != null) {
-            result.success(qrCode)
-        } else {
-            result.error("QR_ERROR", "Failed to generate BLE auto-connect QR code", null)
+            val qrCode = ScannerAutoService.ble({ success, device ->
+                Log.d("BLE_AUTO", "BLE callback triggered. success=$success device=$device")
+
+                Handler(Looper.getMainLooper()).post {
+                    Log.d("BLE_AUTO", "Inside main thread handler")
+
+                    if (success && device != null) {
+                        Log.d("BLE_AUTO", "Device found. Creating ScannerBleDevice")
+
+                        val scanner = ScannerBleDevice.from(device)
+
+                        Log.d("BLE_AUTO", "Attempting to connect to device")
+                        scanner.connect { connectSuccess, error ->
+                            Log.d(
+                                "BLE_AUTO",
+                                "Connect callback triggered. success=$connectSuccess error=$error"
+                            )
+
+                            Handler(Looper.getMainLooper()).post {
+                                if (connectSuccess) {
+                                    Log.d("BLE_AUTO", "Device connected successfully")
+                                    connectedDevice = scanner
+
+                                    Log.d("BLE_AUTO", "Setting up device data listener")
+                                    setupDeviceDataListener(scanner)
+
+                                    Log.d("BLE_AUTO", "Invoking Flutter method onScannerConnected = true")
+                                    channel.invokeMethod("onScannerConnected", true)
+                                } else {
+                                    Log.e("BLE_AUTO", "Device connection FAILED")
+                                    channel.invokeMethod("onScannerConnected", false)
+                                }
+                            }
+                        }
+                    } else {
+                        Log.e("BLE_AUTO", "BLE scan failed or device is null")
+                        Handler(Looper.getMainLooper()).post {
+                            channel.invokeMethod("onScannerConnected", false)
+                        }
+                    }
+                }
+            }, { step ->
+                Log.d("BLE_AUTO", "AutoConnect step received: $step")
+
+                Handler(Looper.getMainLooper()).post {
+                    Log.d("BLE_AUTO", "Sending step to Flutter")
+                    channel.invokeMethod("onScannerAutoConnectStep", step)
+                }
+            })
+
+            Log.d("BLE_AUTO", "ScannerAutoService.ble() returned qrCode = $qrCode")
+
+            if (!qrCode.isNullOrBlank()) {
+                Log.d("BLE_AUTO", "QR Code generated successfully")
+                lastBleQrCode = qrCode
+                result.success(qrCode)
+            } else if (!lastBleQrCode.isNullOrBlank()) {
+                Log.w("BLE_AUTO", "SDK returned null QR. Returning cached QR code instead")
+                result.success(lastBleQrCode)
+            } else {
+                Log.e("BLE_AUTO", "QR_ERROR: SDK returned null and no cached QR code exists")
+                result.error("QR_ERROR", "Failed to generate BLE auto-connect QR code", null)
+            }
+        } catch (e: Exception) {
+            Log.e("BLE_AUTO", "Exception inside autoConnectBle()", e)
+
+            if (!lastBleQrCode.isNullOrBlank()) {
+                Log.w("BLE_AUTO", "Returning cached QR code after exception")
+                result.success(lastBleQrCode)
+            } else {
+                result.error("QR_ERROR", e.message ?: "Unknown BLE auto connect error", null)
+            }
+        } finally {
+            isAutoConnectBleRunning = false
         }
     }
 
