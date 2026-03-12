@@ -50,24 +50,20 @@ class _MyAppState extends State<MyApp> {
             _batteryLevel = 0;
           }
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(connected ? 'Scanner Auto-Connected!' : 'Scanner connection ended.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(connected ? 'Scanner Auto-Connected!' : 'Scanner connection ended.')));
       },
       onScannerAutoConnectStep: (step) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Auto-connect step: $step')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Auto-connect step: $step')));
       },
       onBarcodeScanned: (barcode) {
         if (!mounted) return;
         setState(() {
           _scannedBarcodes.insert(0, barcode);
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Scanned: $barcode')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Scanned: $barcode')));
       },
     );
   }
@@ -92,17 +88,16 @@ class _MyAppState extends State<MyApp> {
     final granted = await _zebraScannerPlugin.requestPermissions();
     if (!mounted) return;
     if (!granted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Warning: Bluetooth/Location permissions not fully granted.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Warning: Bluetooth/Location permissions not fully granted.')));
     }
   }
 
   Future<void> initPlatformState() async {
     String platformVersion;
     try {
-      platformVersion =
-          await _zebraScannerPlugin.getPlatformVersion() ?? 'Unknown platform version';
+      platformVersion = await _zebraScannerPlugin.getPlatformVersion() ?? 'Unknown platform version';
     } on PlatformException {
       platformVersion = 'Failed to get platform version.';
     }
@@ -121,14 +116,14 @@ class _MyAppState extends State<MyApp> {
       setState(() {
         _qrCodeContent = qrCode;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Waiting for scanner to connect via BLE...')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Waiting for scanner to connect via BLE...')));
     } on PlatformException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error initiating auto-connect: ${e.message}')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error initiating auto-connect: ${e.message}')));
     }
   }
 
@@ -142,14 +137,10 @@ class _MyAppState extends State<MyApp> {
         _deviceVersion = "Unknown";
         _batteryLevel = 0;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Disconnected')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Disconnected')));
     } on PlatformException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.message}')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.message}')));
     }
   }
 
@@ -160,14 +151,10 @@ class _MyAppState extends State<MyApp> {
       await Future.delayed(const Duration(milliseconds: 500));
       await _fetchDeviceInfo();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Device name updated!')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Device name updated!')));
     } on PlatformException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.message}')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.message}')));
     }
   }
 
@@ -222,28 +209,29 @@ class _MyAppState extends State<MyApp> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Status: ${_isConnected ? "Connected" : "Disconnected"}',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                      color: _isConnected ? Colors.green : Colors.red)),
+              Text(
+                'Status: ${_isConnected ? "Connected" : "Disconnected"}',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  color: _isConnected ? Colors.green : Colors.red,
+                ),
+              ),
               if (_isConnected)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
                   child: Text(
-                      'Name: $_deviceName | Version: $_deviceVersion | Battery: $_batteryLevel%',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontWeight: FontWeight.w500)),
+                    'Name: $_deviceName | Version: $_deviceVersion | Battery: $_batteryLevel%',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                  ),
                 ),
               const SizedBox(height: 10),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  ElevatedButton(
-                    onPressed: _autoConnectBle,
-                    child: const Text('Auto Connect BLE'),
-                  ),
+                  ElevatedButton(onPressed: _autoConnectBle, child: const Text('Auto Connect BLE')),
                   ElevatedButton(
                     onPressed: _isConnected ? _disconnect : null,
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
@@ -251,6 +239,7 @@ class _MyAppState extends State<MyApp> {
                   ),
                 ],
               ),
+              if (_isConnected) ElevatedButton(onPressed: _fetchDeviceInfo, child: const Text('Fetch Device Info')),
               if (_qrCodeContent.isNotEmpty) ...[
                 const SizedBox(height: 15),
                 const Text('Scan this QR Code to connect:', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -266,18 +255,9 @@ class _MyAppState extends State<MyApp> {
                   child: Row(
                     spacing: 12,
                     children: [
-                      ElevatedButton(
-                        onPressed: _testBuzzer,
-                        child: const Text('Buzzer (Normal)'),
-                      ),
-                      ElevatedButton(
-                        onPressed: _testVibrator,
-                        child: const Text('Vibrator (Short)'),
-                      ),
-                      ElevatedButton(
-                        onPressed: _testLed,
-                        child: const Text('LED (Red+Green)'),
-                      ),
+                      ElevatedButton(onPressed: _testBuzzer, child: const Text('Buzzer (Normal)')),
+                      ElevatedButton(onPressed: _testVibrator, child: const Text('Vibrator (Short)')),
+                      ElevatedButton(onPressed: _testLed, child: const Text('LED (Red+Green)')),
                     ],
                   ),
                 ),
@@ -299,10 +279,7 @@ class _MyAppState extends State<MyApp> {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  ElevatedButton(
-                    onPressed: _isConnected ? _setDeviceName : null,
-                    child: const Text('Set Name'),
-                  ),
+                  ElevatedButton(onPressed: _isConnected ? _setDeviceName : null, child: const Text('Set Name')),
                 ],
               ),
               const SizedBox(height: 15),
@@ -320,10 +297,7 @@ class _MyAppState extends State<MyApp> {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  ElevatedButton(
-                    onPressed: _isConnected ? _sendSpecCode : null,
-                    child: const Text('Set SpecCode'),
-                  ),
+                  ElevatedButton(onPressed: _isConnected ? _sendSpecCode : null, child: const Text('Set SpecCode')),
                 ],
               ),
 
