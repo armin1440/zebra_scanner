@@ -158,10 +158,11 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
-  Future<void> _testBuzzer() async {
+  Future<void> _testBuzzer(BuzzerType type) async {
     try {
-      await _zebraScannerPlugin.setBuzzer(BuzzerType.normalScan);
+      await _zebraScannerPlugin.setBuzzer(type);
     } on PlatformException catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.message}')));
     }
   }
@@ -170,6 +171,7 @@ class _MyAppState extends State<MyApp> {
     try {
       await _zebraScannerPlugin.setVibrator(VibratorType.short);
     } on PlatformException catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.message}')));
     }
   }
@@ -178,6 +180,7 @@ class _MyAppState extends State<MyApp> {
     try {
       await _zebraScannerPlugin.setLed(LedColor.redAndGreen, durationMs: 500, blinkCount: 2);
     } on PlatformException catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.message}')));
     }
   }
@@ -186,8 +189,10 @@ class _MyAppState extends State<MyApp> {
     if (_specCodeController.text.trim().isEmpty) return;
     try {
       await _zebraScannerPlugin.sendSpecCode(_specCodeController.text.trim());
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Spec Code Sent!')));
     } on PlatformException catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.message}')));
     }
   }
@@ -255,11 +260,23 @@ class _MyAppState extends State<MyApp> {
                   child: Row(
                     spacing: 12,
                     children: [
-                      ElevatedButton(onPressed: _testBuzzer, child: const Text('Buzzer (Normal)')),
                       ElevatedButton(onPressed: _testVibrator, child: const Text('Vibrator (Short)')),
                       ElevatedButton(onPressed: _testLed, child: const Text('LED (Red+Green)')),
                     ],
                   ),
+                ),
+                const SizedBox(height: 20),
+                const Text('Buzzer Tests', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: BuzzerType.values.map((type) {
+                    return ElevatedButton(
+                      onPressed: () => _testBuzzer(type),
+                      child: Text(type.name),
+                    );
+                  }).toList(),
                 ),
               ],
 
