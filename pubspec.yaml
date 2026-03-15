@@ -1,6 +1,6 @@
 name: zebra_handheld_scanner
 description: "A Flutter plugin for seamlessly communicating with and controlling Zebra Bluetooth BLE/SPP handheld barcode scanners natively on iOS and Android."
-version: 0.0.3
+version: 0.0.4
 homepage: https://github.com/armin1440/zebra_scanner
 
 environment:

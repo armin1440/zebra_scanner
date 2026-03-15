@@ -1,3 +1,7 @@
+## 0.0.4
+
+* lowered dart sdk version to 3.10.1
+
 ## 0.0.3
 
 * Cache qr code in autoConnectBle response in Android
