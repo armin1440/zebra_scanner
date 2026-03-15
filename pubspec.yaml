@@ -4,7 +4,7 @@ version: 0.0.3
 homepage: https://github.com/armin1440/zebra_scanner
 
 environment:
-  sdk: ^3.11.0
+  sdk: ^3.10.1
   flutter: '>=3.3.0'
 
 dependencies:
