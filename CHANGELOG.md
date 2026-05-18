@@ -1,3 +1,7 @@
+## 0.0.5
+
+* ignored \r\n- in android
+
 ## 0.0.4
 
 * lowered dart sdk version to 3.10.1
