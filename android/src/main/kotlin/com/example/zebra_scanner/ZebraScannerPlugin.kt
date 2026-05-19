@@ -138,7 +138,13 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
                 val text = str as? String ?: return@post
                 // Ignore the automatic scan artifact from the scanner
                 val cleaned = text.replace("\r", "").replace("\n", "").trim()
-                if (cleaned == "\uFFFD-" || text == "\n-" || text == "\r\n-") {
+                if (cleaned.length == 2 && cleaned.startsWith("\uFFFD")) {
+                    return@post
+                }
+                if (cleaned.length == 1 && (text.startsWith("\n") || text.startsWith("\r"))) {
+                    return@post
+                }
+                if (cleaned == "\uFFFD" || cleaned.isEmpty()) {
                     return@post
                 }
                 channel.invokeMethod("onBarcodeScanned", text)

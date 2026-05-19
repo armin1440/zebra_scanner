@@ -161,9 +161,15 @@ class ZebraHandheldScanner {
                 .replaceAll('\r', '')
                 .replaceAll('\n', '')
                 .trim();
-            if (cleaned == '\uFFFD-' ||
-                barcode == '\n-' ||
-                barcode == '\r\n-') {
+
+            if (cleaned.length == 2 && cleaned.startsWith('\uFFFD')) {
+              break;
+            }
+            if (cleaned.length == 1 &&
+                (barcode.startsWith('\n') || barcode.startsWith('\r'))) {
+              break;
+            }
+            if (cleaned == '\uFFFD' || cleaned.isEmpty) {
               break;
             }
 
