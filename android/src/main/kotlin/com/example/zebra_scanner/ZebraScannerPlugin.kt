@@ -134,12 +134,33 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
     private fun setupDeviceDataListener(device: ScannerDevice) {
         device.onData { _, str ->
             Handler(Looper.getMainLooper()).post {
-                channel.invokeMethod("onBarcodeScanned", str)
+                if (str == null) return@post
+                val text = str as? String ?: return@post
+                // Ignore the automatic scan artifact from the scanner
+                val cleaned = text.replace("\r", "").replace("\n", "").trim()
+                if (cleaned.length == 2 && cleaned.startsWith("\uFFFD")) {
+                    return@post
+                }
+                if (cleaned.length == 1 && (text.startsWith("\n") || text.startsWith("\r"))) {
+                    return@post
+                }
+                if (cleaned == "\uFFFD" || cleaned.isEmpty()) {
+                    return@post
+                }
+                
+                // If we receive data, the device is definitely connected
+                if (connectedDevice == null) {
+                    connectedDevice = device
+                    channel.invokeMethod("onScannerConnected", true)
+                }
+
+                channel.invokeMethod("onBarcodeScanned", text)
             }
         }
         device.onState(object : ScannerDevice.StateCallback() {
             override fun onConnected() {
                 Handler(Looper.getMainLooper()).post {
+                    connectedDevice = device
                     channel.invokeMethod("onScannerConnected", true)
                 }
             }

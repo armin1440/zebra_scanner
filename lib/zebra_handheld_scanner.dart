@@ -101,7 +101,11 @@ class ZebraHandheldScanner {
   /// Sets the scanner's LED color, duration, and blink count (OP_SET_LED: 0x0B).
   /// [durationMs] must be in milliseconds (e.g., 500ms = 10 units of 50ms). Max is 255 units (12750ms).
   /// [blinkCount] is the number of blinks (0 to 255).
-  Future<void> setLed(LedColor color, {int durationMs = 500, int blinkCount = 1}) {
+  Future<void> setLed(
+    LedColor color, {
+    int durationMs = 500,
+    int blinkCount = 1,
+  }) {
     int durationUnits = (durationMs / 50).round().clamp(0, 255);
     int blinks = blinkCount.clamp(0, 255);
     String durHex = durationUnits.toRadixString(16).padLeft(2, '0');
@@ -114,13 +118,17 @@ class ZebraHandheldScanner {
   /// expects just the underlying text encoded as ASCII bytes.
   Future<void> sendSpecCode(String code) {
     final cleanCode = code.replaceFirst('%%SpecCode', '');
-    final hexData = cleanCode.codeUnits.map((c) => c.toRadixString(16).padLeft(2, '0')).join('');
+    final hexData = cleanCode.codeUnits
+        .map((c) => c.toRadixString(16).padLeft(2, '0'))
+        .join('');
     return sendCommand('ba05$hexData');
   }
 
   /// Sends a scan head control command (OP_CMD_TO_LASER: 0x06).
   Future<void> sendLaserCommand(String command) {
-    final hexData = command.codeUnits.map((c) => c.toRadixString(16).padLeft(2, '0')).join('');
+    final hexData = command.codeUnits
+        .map((c) => c.toRadixString(16).padLeft(2, '0'))
+        .join('');
     return sendCommand('ba06$hexData');
   }
 
@@ -130,7 +138,9 @@ class ZebraHandheldScanner {
     Function(int)? onScannerAutoConnectStep,
     Function(String)? onBarcodeScanned,
   }) {
-    const MethodChannel('zebra_handheld_scanner').setMethodCallHandler((call) async {
+    const MethodChannel('zebra_handheld_scanner').setMethodCallHandler((
+      call,
+    ) async {
       switch (call.method) {
         case 'onScannerConnected':
           if (onScannerConnected != null) {
@@ -144,7 +154,26 @@ class ZebraHandheldScanner {
           break;
         case 'onBarcodeScanned':
           if (onBarcodeScanned != null) {
-            onBarcodeScanned(call.arguments as String);
+            final String barcode = call.arguments as String;
+
+            // Ignore automatic artifact scanned by Zebra on Android
+            final cleaned = barcode
+                .replaceAll('\r', '')
+                .replaceAll('\n', '')
+                .trim();
+
+            if (cleaned.length == 2 && cleaned.startsWith('\uFFFD')) {
+              break;
+            }
+            if (cleaned.length == 1 &&
+                (barcode.startsWith('\n') || barcode.startsWith('\r'))) {
+              break;
+            }
+            if (cleaned == '\uFFFD' || cleaned.isEmpty) {
+              break;
+            }
+
+            onBarcodeScanned(barcode);
           }
           break;
       }

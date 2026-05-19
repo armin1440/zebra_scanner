@@ -1,3 +1,15 @@
+## 0.0.7
+
+* Return device info even after waking up from dormancy mode 
+
+## 0.0.6
+
+* Improved filtering for automatic invalid scan artifacts on Android
+
+## 0.0.5
+
+* ignored \r\n- in android
+
 ## 0.0.4
 
 * lowered dart sdk version to 3.10.1
