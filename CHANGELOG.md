@@ -1,3 +1,7 @@
+## 0.0.8
+
+* Ignore auto sent strings in onBarcodeScanned
+
 ## 0.0.7
 
 * Return device info even after waking up from dormancy mode 
