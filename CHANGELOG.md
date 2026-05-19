@@ -1,3 +1,7 @@
+## 0.0.6
+
+* Improved filtering for automatic invalid scan artifacts on Android
+
 ## 0.0.5
 
 * ignored \r\n- in android
