@@ -1,3 +1,7 @@
+## 0.0.7
+
+* Return device info even after waking up from dormancy mode 
+
 ## 0.0.6
 
 * Improved filtering for automatic invalid scan artifacts on Android
