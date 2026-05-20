@@ -144,8 +144,12 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
     public func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
         if isScanningForAutoConnect {
             let name = peripheral.name?.lowercased() ?? ""
-            // Basic heuristic: Connect to a discovered device that has a name (likely the scanner turning on)
-            if !name.isEmpty {
+
+            // iOS often appends "BLE" at the end of the Zebra scanner name.
+            // We validate it using this logic, plus a proximity check to ensure it's the device scanning the screen.
+            let isScanner = name.hasSuffix("ble")
+
+            if isScanner && RSSI.intValue > -65 && RSSI.intValue != 127 {
                 centralManager.stopScan()
                 isScanningForAutoConnect = false
                 connectedPeripheral = peripheral
