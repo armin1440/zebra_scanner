@@ -91,6 +91,20 @@ class _MyAppState extends State<MyApp> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Warning: Bluetooth/Location permissions not fully granted.')));
+    } else {
+      _connectToLastDevice();
+    }
+  }
+
+  Future<void> _connectToLastDevice() async {
+    try {
+      final success = await _zebraScannerPlugin.connectToLastDevice();
+      if (success) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reconnected to last device!')));
+      }
+    } on PlatformException catch (e) {
+      if (kDebugMode) print("Failed to connect to last device: $e");
     }
   }
 

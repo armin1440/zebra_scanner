@@ -64,6 +64,9 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
             "autoConnectBle" -> {
                 autoConnectBle(result)
             }
+            "connectToLastDevice" -> {
+                connectToLastDevice(result)
+            }
             "sendCommand" -> {
                 sendCommand(call, result)
             }
@@ -100,8 +103,9 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 permissionsToRequest.add(Manifest.permission.BLUETOOTH_SCAN)
                 permissionsToRequest.add(Manifest.permission.BLUETOOTH_CONNECT)
+            } else {
+                permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
             }
-            permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
 
             val ungrantedPermissions = permissionsToRequest.filter {
                 currentActivity.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
@@ -131,6 +135,12 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         return false
     }
 
+    private fun saveDeviceMac(macAddress: String?) {
+        if (macAddress == null) return
+        activity?.getSharedPreferences("ZebraScannerPrefs", android.content.Context.MODE_PRIVATE)
+            ?.edit()?.putString("last_device_mac", macAddress)?.apply()
+    }
+
     private fun setupDeviceDataListener(device: ScannerDevice) {
         device.onData { _, str ->
             Handler(Looper.getMainLooper()).post {
@@ -151,6 +161,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
                 // If we receive data, the device is definitely connected
                 if (connectedDevice == null) {
                     connectedDevice = device
+                    saveDeviceMac(device.address)
                     channel.invokeMethod("onScannerConnected", true)
                 }
 
@@ -161,6 +172,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
             override fun onConnected() {
                 Handler(Looper.getMainLooper()).post {
                     connectedDevice = device
+                    saveDeviceMac(device.address)
                     channel.invokeMethod("onScannerConnected", true)
                 }
             }
@@ -229,6 +241,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
                                 if (connectSuccess) {
                                     Log.d("BLE_AUTO", "Device connected successfully")
                                     connectedDevice = scanner
+                                    saveDeviceMac(scanner.address)
 
                                     Log.d("BLE_AUTO", "Setting up device data listener")
                                     setupDeviceDataListener(scanner)
@@ -281,6 +294,50 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
             }
         } finally {
             isAutoConnectBleRunning = false
+        }
+    }
+
+    private fun connectToLastDevice(result: Result) {
+        val currentActivity = activity
+        if (currentActivity == null) {
+            result.error("NO_ACTIVITY", "Activity is not attached", null)
+            return
+        }
+
+        val prefs = currentActivity.getSharedPreferences("ZebraScannerPrefs", android.content.Context.MODE_PRIVATE)
+        val macAddress = prefs.getString("last_device_mac", null)
+
+        if (macAddress == null) {
+            result.success(false)
+            return
+        }
+
+        try {
+            val bluetoothAdapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+            if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
+                result.success(false)
+                return
+            }
+
+            val device = bluetoothAdapter.getRemoteDevice(macAddress)
+            val scanner = ScannerBleDevice.from(device) as ScannerDevice
+
+            scanner.connect { connectSuccess, _ ->
+                Handler(Looper.getMainLooper()).post {
+                    if (connectSuccess) {
+                        connectedDevice = scanner
+                        saveDeviceMac(scanner.address)
+                        setupDeviceDataListener(scanner)
+                        channel.invokeMethod("onScannerConnected", true)
+                        result.success(true)
+                    } else {
+                        result.success(false)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("BLE_AUTO", "Exception connecting to last device", e)
+            result.success(false)
         }
     }
 

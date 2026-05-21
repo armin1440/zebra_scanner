@@ -58,6 +58,12 @@ class ZebraHandheldScanner {
     return ZebraHandheldScannerPlatform.instance.autoConnectBle();
   }
 
+  /// Attempts to reconnect to the last successfully connected BLE device.
+  /// Returns [true] if connection starts and succeeds.
+  Future<bool> connectToLastDevice() {
+    return ZebraHandheldScannerPlatform.instance.connectToLastDevice();
+  }
+
   /// Sends an arbitrary hex command string (e.g. "ba0515") to the connected scanner.
   Future<void> sendCommand(String command) {
     return ZebraHandheldScannerPlatform.instance.sendCommand(command);
