@@ -4,7 +4,6 @@ version = "1.0-SNAPSHOT"
 val pluginDir = project.projectDir
 
 buildscript {
-    val kotlinVersion = "2.2.20"
     repositories {
         google()
         mavenCentral()
@@ -12,7 +11,6 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.11.1")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
     }
 }
 
@@ -28,7 +26,6 @@ rootProject.allprojects {
 
 plugins {
     id("com.android.library")
-    id("kotlin-android")
 }
 
 android {
@@ -71,8 +68,15 @@ android {
     }
 }
 
-kotlin {
-    jvmToolchain(17)
+val agpMajor = com.android.Version.ANDROID_GRADLE_PLUGIN_VERSION.substringBefore('.').toInt()
+if (agpMajor < 9) {
+    apply(plugin = "org.jetbrains.kotlin.android")
+}
+
+project.extensions.configure(org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension::class.java) {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
 }
 
 dependencies {

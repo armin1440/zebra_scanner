@@ -30,6 +30,12 @@ class MethodChannelZebraHandheldScanner extends ZebraHandheldScannerPlatform {
   }
 
   @override
+  Future<bool> connectToLastDevice() async {
+    final result = await methodChannel.invokeMethod<bool>('connectToLastDevice');
+    return result ?? false;
+  }
+
+  @override
   Future<void> sendCommand(String command) async {
     await methodChannel.invokeMethod<void>(
       'sendCommand',

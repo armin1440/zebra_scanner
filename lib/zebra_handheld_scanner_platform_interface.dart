@@ -35,6 +35,10 @@ abstract class ZebraHandheldScannerPlatform extends PlatformInterface {
     throw UnimplementedError('autoConnectBle() has not been implemented.');
   }
 
+  Future<bool> connectToLastDevice() {
+    throw UnimplementedError('connectToLastDevice() has not been implemented.');
+  }
+
   Future<void> sendCommand(String command) {
     throw UnimplementedError('sendCommand() has not been implemented.');
   }

@@ -1,3 +1,7 @@
+## 0.0.10
+
+* Added `connectToLastDevice` feature to automatically reconnect to the last connected scanner on both Android and iOS.
+
 ## 0.0.9
 
 * iOS: Update BLE autoconnect to exclusively filter scanners whose Bluetooth name ends with "BLE".

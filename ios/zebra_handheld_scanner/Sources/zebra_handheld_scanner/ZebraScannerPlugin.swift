@@ -16,7 +16,9 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
     
     private var pendingBatteryResult: FlutterResult?
     private var pendingVersionResult: FlutterResult?
-    
+    private var pendingConnectResult: FlutterResult?
+    private var connectTimeoutWorkItem: DispatchWorkItem?
+
     private var isScanningForAutoConnect = false
 
     init(channel: FlutterMethodChannel) {
@@ -58,6 +60,35 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
                 result(instructions)
             } else {
                 result(FlutterError(code: "BLE_OFF", message: "Bluetooth is not powered on", details: nil))
+            }
+
+        case "connectToLastDevice":
+            let defaults = UserDefaults.standard
+            if let uuidString = defaults.string(forKey: "ZebraScannerLastDeviceUUID"),
+               let uuid = UUID(uuidString: uuidString) {
+                let peripherals = centralManager.retrievePeripherals(withIdentifiers: [uuid])
+                if let peripheral = peripherals.first {
+                    connectedPeripheral = peripheral
+                    pendingConnectResult = result
+                    centralManager.connect(peripheral, options: nil)
+
+                    // Setup a 5 second timeout for connection
+                    connectTimeoutWorkItem?.cancel()
+                    let workItem = DispatchWorkItem { [weak self] in
+                        guard let self = self else { return }
+                        if self.pendingConnectResult != nil {
+                            self.centralManager.cancelPeripheralConnection(peripheral)
+                            self.pendingConnectResult?(false)
+                            self.pendingConnectResult = nil
+                        }
+                    }
+                    connectTimeoutWorkItem = workItem
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: workItem)
+                } else {
+                    result(false)
+                }
+            } else {
+                result(false)
             }
             
         case "sendCommand":
@@ -159,6 +190,9 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
     }
     
     public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        // Save the connected peripheral UUID
+        UserDefaults.standard.set(peripheral.identifier.uuidString, forKey: "ZebraScannerLastDeviceUUID")
+
         peripheral.delegate = self
         notifyCharacteristics.removeAll()
         writeCharacteristics.removeAll()
@@ -166,9 +200,23 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
         versionCharacteristic = nil
         
         peripheral.discoverServices(nil)
-        
+
+        connectTimeoutWorkItem?.cancel()
+        if let result = pendingConnectResult {
+            result(true)
+            pendingConnectResult = nil
+        }
+
         DispatchQueue.main.async {
             self.channel.invokeMethod("onScannerConnected", arguments: true)
+        }
+    }
+
+    public func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        connectTimeoutWorkItem?.cancel()
+        if let result = pendingConnectResult {
+            result(false)
+            pendingConnectResult = nil
         }
     }
     
