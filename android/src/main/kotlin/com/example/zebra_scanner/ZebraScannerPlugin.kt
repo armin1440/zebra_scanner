@@ -105,6 +105,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
                 permissionsToRequest.add(Manifest.permission.BLUETOOTH_CONNECT)
             } else {
                 permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
+                permissionsToRequest.add(Manifest.permission.ACCESS_COARSE_LOCATION)
             }
 
             val ungrantedPermissions = permissionsToRequest.filter {
