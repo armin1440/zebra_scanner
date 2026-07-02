@@ -2,10 +2,14 @@ package com.example.zebra_scanner
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.util.Log
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -189,6 +193,28 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
 
     private fun autoConnectBle(result: Result) {
         Log.d("BLE_AUTO", "autoConnectBle() started")
+
+        val currentActivity = activity
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && currentActivity != null) {
+            val locationManager = currentActivity.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val isLocationEnabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                locationManager.isLocationEnabled
+            } else {
+                val mode = Settings.Secure.getInt(currentActivity.contentResolver, Settings.Secure.LOCATION_MODE, Settings.Secure.LOCATION_MODE_OFF)
+                mode != Settings.Secure.LOCATION_MODE_OFF
+            }
+
+            if (!isLocationEnabled) {
+                Log.w("BLE_AUTO", "Location services are disabled, prompting user to enable them")
+                try {
+                    currentActivity.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                } catch (e: Exception) {
+                    currentActivity.startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+                result.error("LOCATION_DISABLED", "Location services are disabled. Please enable them and try again.", null)
+                return
+            }
+        }
 
         if (isAutoConnectBleRunning) {
             Log.w("BLE_AUTO", "autoConnectBle() ignored because a previous call is still running")
