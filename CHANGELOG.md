@@ -1,3 +1,7 @@
+## 0.0.12
+
+* Added check for location services being enabled on Android 11 and below before generating BLE connection QR code, automatically prompting the user to enable it if disabled.
+
 ## 0.0.11
 
 * Added `ACCESS_COARSE_LOCATION` permission support for Android 11 and below to fix BLE auto-connect on older Android versions (like Android 9).
