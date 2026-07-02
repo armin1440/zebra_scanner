@@ -1,3 +1,7 @@
+## 0.0.11
+
+* Added `ACCESS_COARSE_LOCATION` permission support for Android 11 and below to fix BLE auto-connect on older Android versions (like Android 9).
+
 ## 0.0.10
 
 * Added `connectToLastDevice` feature to automatically reconnect to the last connected scanner on both Android and iOS.
