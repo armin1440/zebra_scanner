@@ -21,6 +21,12 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
 
     private var isScanningForAutoConnect = false
 
+    private var barcodeBuffer = ""
+    private var dispatchBarcodeWorkItem: DispatchWorkItem?
+
+    private var isCoolingDown = false
+    private var cooldownWorkItem: DispatchWorkItem?
+
     init(channel: FlutterMethodChannel) {
         self.channel = channel
         super.init()
@@ -147,6 +153,36 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
         }
     }
     
+    private func clearConnectionState() {
+        connectedPeripheral = nil
+        notifyCharacteristics.removeAll()
+        writeCharacteristics.removeAll()
+        batteryCharacteristic = nil
+        versionCharacteristic = nil
+        barcodeBuffer = ""
+        dispatchBarcodeWorkItem?.cancel()
+        cooldownWorkItem?.cancel()
+        isCoolingDown = false
+    }
+
+    private func dispatchAccumulatedBarcode() {
+        dispatchBarcodeWorkItem?.cancel()
+        let finalBarcode = barcodeBuffer.replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        barcodeBuffer = ""
+
+        if !finalBarcode.isEmpty && finalBarcode != "\u{FFFD}" {
+            self.channel.invokeMethod("onBarcodeScanned", arguments: finalBarcode)
+
+            self.isCoolingDown = true
+            self.cooldownWorkItem?.cancel()
+            let cooldown = DispatchWorkItem { [weak self] in
+                self?.isCoolingDown = false
+            }
+            self.cooldownWorkItem = cooldown
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: cooldown)
+        }
+    }
+
     private func dataFromHexString(_ hex: String) -> Data {
         var data = Data()
         var hexStr = hex
@@ -194,10 +230,8 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
         UserDefaults.standard.set(peripheral.identifier.uuidString, forKey: "ZebraScannerLastDeviceUUID")
 
         peripheral.delegate = self
-        notifyCharacteristics.removeAll()
-        writeCharacteristics.removeAll()
-        batteryCharacteristic = nil
-        versionCharacteristic = nil
+        clearConnectionState()
+        connectedPeripheral = peripheral
         
         peripheral.discoverServices(nil)
 
@@ -222,11 +256,7 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
     
     public func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         if peripheral == connectedPeripheral {
-            connectedPeripheral = nil
-            notifyCharacteristics.removeAll()
-            writeCharacteristics.removeAll()
-            batteryCharacteristic = nil
-            versionCharacteristic = nil
+            clearConnectionState()
             
             DispatchQueue.main.async {
                 self.channel.invokeMethod("onScannerConnected", arguments: false)
@@ -294,15 +324,42 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
         }
         
         // Otherwise, assume it's scanned barcode data
+        var text: String? = nil
         if let stringValue = String(data: data, encoding: .utf8), !stringValue.isEmpty {
-            DispatchQueue.main.async {
-                self.channel.invokeMethod("onBarcodeScanned", arguments: stringValue)
-            }
+            text = stringValue
         } else if !data.isEmpty {
             // Fallback for hex string if not valid utf8
-            let hexString = data.map { String(format: "%02x", $0) }.joined()
+            text = data.map { String(format: "%02x", $0) }.joined()
+        }
+
+        if let text = text {
+            let cleanedChunk = text.replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Ignore the automatic scan artifact from the scanner
+            if cleanedChunk.count == 2 && cleanedChunk.hasPrefix("\u{FFFD}") {
+                return
+            }
+            if cleanedChunk == "\u{FFFD}" {
+                return
+            }
+
             DispatchQueue.main.async {
-                self.channel.invokeMethod("onBarcodeScanned", arguments: hexString)
+                if self.isCoolingDown {
+                    return
+                }
+
+                self.barcodeBuffer += text
+
+                self.dispatchBarcodeWorkItem?.cancel()
+                let workItem = DispatchWorkItem { [weak self] in
+                    self?.dispatchAccumulatedBarcode()
+                }
+                self.dispatchBarcodeWorkItem = workItem
+
+                // Use a 0.25s debounce window. This is the "silence timeout" between
+                // BLE packets. 0.25s is long enough to keep a single scan together,
+                // but short enough to fire BEFORE a second physical scan begins.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
             }
         }
     }

@@ -1,3 +1,9 @@
+## 0.0.13
+
+* Added a 250ms debounce buffer to properly reconstruct fragmented barcodes over BLE.
+* Added a 1.5-second cooldown after successful scans to prevent duplicate or trailing artifact scans.
+* Improved connection state cleanup on disconnects for both Android and iOS.
+
 ## 0.0.12
 
 * Added check for location services being enabled on Android 11 and below before generating BLE connection QR code, automatically prompting the user to enable it if disabled.

@@ -34,6 +34,16 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
     private var lastBleQrCode: String? = null
     private var isAutoConnectBleRunning = false
 
+    private val barcodeBuffer = StringBuilder()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    
+    private var isCoolingDown = false
+    private val cooldownRunnable = Runnable { isCoolingDown = false }
+
+    private val dispatchBarcodeRunnable = Runnable {
+        dispatchAccumulatedBarcode()
+    }
+
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "zebra_handheld_scanner")
         channel.setMethodCallHandler(this)
@@ -146,20 +156,42 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
             ?.edit()?.putString("last_device_mac", macAddress)?.apply()
     }
 
+    private fun clearConnectionState() {
+        connectedDevice = null
+        barcodeBuffer.setLength(0)
+        mainHandler.removeCallbacks(dispatchBarcodeRunnable)
+        mainHandler.removeCallbacks(cooldownRunnable)
+        isCoolingDown = false
+    }
+
+    private fun dispatchAccumulatedBarcode() {
+        mainHandler.removeCallbacks(dispatchBarcodeRunnable)
+        val finalBarcode = barcodeBuffer.toString().replace("\r", "").replace("\n", "").trim()
+        barcodeBuffer.setLength(0) // Clear the buffer
+        
+        if (finalBarcode.isNotEmpty() && finalBarcode != "\uFFFD") {
+            channel.invokeMethod("onBarcodeScanned", finalBarcode)
+            
+            // Ignore trailing packets or repeated scans for 1.5 seconds
+            isCoolingDown = true
+            mainHandler.removeCallbacks(cooldownRunnable)
+            mainHandler.postDelayed(cooldownRunnable, 1500)
+        }
+    }
+
     private fun setupDeviceDataListener(device: ScannerDevice) {
         device.onData { _, str ->
             Handler(Looper.getMainLooper()).post {
                 if (str == null) return@post
                 val text = str as? String ?: return@post
+                
+                val cleanedChunk = text.replace("\r", "").replace("\n", "").trim()
+                
                 // Ignore the automatic scan artifact from the scanner
-                val cleaned = text.replace("\r", "").replace("\n", "").trim()
-                if (cleaned.length == 2 && cleaned.startsWith("\uFFFD")) {
+                if (cleanedChunk.length == 2 && cleanedChunk.startsWith("\uFFFD")) {
                     return@post
                 }
-                if (cleaned.length == 1 && (text.startsWith("\n") || text.startsWith("\r"))) {
-                    return@post
-                }
-                if (cleaned == "\uFFFD" || cleaned.isEmpty()) {
+                if (cleanedChunk == "\uFFFD") {
                     return@post
                 }
                 
@@ -170,7 +202,18 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
                     channel.invokeMethod("onScannerConnected", true)
                 }
 
-                channel.invokeMethod("onBarcodeScanned", text)
+                if (isCoolingDown) {
+                    return@post
+                }
+
+                // Append the chunk to the barcode buffer
+                barcodeBuffer.append(text)
+
+                mainHandler.removeCallbacks(dispatchBarcodeRunnable)
+                // Use a 250ms debounce window. This is the "silence timeout" between 
+                // BLE packets. 250ms is long enough to keep a single scan together, 
+                // but short enough to fire BEFORE a second physical scan begins.
+                mainHandler.postDelayed(dispatchBarcodeRunnable, 250)
             }
         }
         device.onState(object : ScannerDevice.StateCallback() {
@@ -185,7 +228,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
             override fun onDisconnected() {
                 Handler(Looper.getMainLooper()).post {
                     channel.invokeMethod("onScannerConnected", false)
-                    connectedDevice = null
+                    clearConnectionState()
                 }
             }
         })
@@ -242,7 +285,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
                 } catch (e: Exception) {
                     Log.e("BLE_AUTO", "Error while disconnecting previous device", e)
                 } finally {
-                    connectedDevice = null
+                    clearConnectionState()
                 }
             }
 
@@ -449,7 +492,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         if (device != null) {
             device.onData(null)
             device.disconnect()
-            connectedDevice = null
+            clearConnectionState()
             result.success(null)
         } else {
             result.success(null)
@@ -460,6 +503,6 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         channel.setMethodCallHandler(null)
         connectedDevice?.onData(null)
         connectedDevice?.disconnect()
-        connectedDevice = null
+        clearConnectionState()
     }
 }
