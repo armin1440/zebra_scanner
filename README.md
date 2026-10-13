@@ -2,7 +2,7 @@
 
 A Flutter plugin for easily integrating and communicating with Zebra Bluetooth BLE/SPP handheld barcode scanners natively on iOS and Android.
 
-This plugin abstracts away the complex underlying native Bluetooth connection logic and exposes a clean, easy-to-use Dart API to discover, connect, listen to barcode scans, and send configuration commands to Zebra scanners.
+This plugin abstracts away the complex underlying native Bluetooth connection logic and exposes a clean, easy-to-use Dart API to discover, connect and listen to barcode scans, and send configuration commands to Zebra scanners.
 
 ## Features
 
