@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scanner Connection Lifecycle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: slim dark header band with a laser scan line, then one reading column; diagrams and tables widen to 1040px and scroll on phones. */
+:root{
+  --bg:#f2f4f8; --surface:#ffffff; --surface-2:#e8ecf3; --fg:#131926; --muted:#566074; --line:#d3d9e4;
+  --accent:#2445c4; --accent-soft:#e3e8fb;
+  --guard:#0b7550; --guard-soft:#dcf1e7;
+  --gap:#975200; --gap-soft:#fbecd5;
+  --laser:#e0352b;
+  --band:#141b2b; --band-fg:#eef1f7; --band-muted:#aab4c7; --band-line:#34405a;
+  --f-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --f-body:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1219; --surface:#161c26; --surface-2:#1e2633; --fg:#e4e8ef; --muted:#9aa4b5; --line:#2b3444;
+    --accent:#86a0ff; --accent-soft:#1b2547;
+    --guard:#52d3a2; --guard-soft:#102b22;
+    --gap:#f1b65c; --gap-soft:#2e2312;
+    --laser:#ff5a4f;
+    --band:#19212f; --band-fg:#eef1f7; --band-muted:#a3adc0; --band-line:#36425a;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1219; --surface:#161c26; --surface-2:#1e2633; --fg:#e4e8ef; --muted:#9aa4b5; --line:#2b3444;
+  --accent:#86a0ff; --accent-soft:#1b2547;
+  --guard:#52d3a2; --guard-soft:#102b22;
+  --gap:#f1b65c; --gap-soft:#2e2312;
+  --laser:#ff5a4f;
+  --band:#19212f; --band-fg:#eef1f7; --band-muted:#a3adc0; --band-line:#36425a;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{background:var(--bg);color:var(--fg);font:16px/1.65 var(--f-body);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1040px;margin:0 auto;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;letter-spacing:-0.01em;color:var(--fg)}
+a{color:var(--accent)}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.mono{font-family:var(--f-mono);font-size:.9em;letter-spacing:0}
+
+/* Header band */
+.band{background:var(--band);color:var(--band-fg);position:relative}
+.band .wrap{padding-block:44px 40px}
+.eyebrow{font:500 12px/1.4 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--band-muted);margin:0}
+.band h1{color:var(--band-fg);font-size:clamp(28px,4.6vw,44px);line-height:1.1;font-weight:800;margin:14px 0 14px;max-width:20ch}
+.lede{max-width:62ch;color:var(--band-muted);font-size:17px;margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px;padding:0;list-style:none}
+.meta li{font:500 12px/1 var(--f-mono);color:var(--band-muted);border:1px solid var(--band-line);border-radius:999px;padding:7px 11px}
+.scanline{position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--laser);box-shadow:0 0 10px 1px var(--laser)}
+
+/* Table of contents */
+.toc{display:flex;flex-wrap:wrap;gap:8px;padding-block:22px 6px;margin:0;list-style:none}
+.toc a{display:inline-block;text-decoration:none;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:13.5px}
+.toc a:hover{border-color:var(--accent);color:var(--accent)}
+
+/* Sections */
+main section{padding-block:34px 10px}
+main section + section{border-top:1px solid var(--line)}
+.kicker{font:500 12px/1.4 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0}
+h2{font-size:clamp(22px,3vw,29px);line-height:1.2;margin:6px 0 14px;font-weight:700}
+h3{font-size:18px;line-height:1.3;margin:26px 0 8px;font-weight:700}
+p,li{max-width:70ch}
+p{margin:0 0 12px}
+.muted{color:var(--muted)}
+
+/* Short answers */
+.answers{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;margin-top:8px}
+.answer{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 18px 8px;min-width:0}
+.answer h3{margin:0 0 8px;font-size:17px}
+.answer p{font-size:15px}
+
+/* Key ideas */
+.ideas{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:0 28px;margin:6px 0 0}
+.ideas div{border-top:1px solid var(--line);padding-block:14px;min-width:0}
+.ideas dt{font:700 15.5px/1.3 var(--f-display);margin-bottom:4px}
+.ideas dd{margin:0;color:var(--muted);font-size:15px}
+
+/* Figures */
+figure{margin:24px 0;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 16px 14px}
+.fig-scroll{overflow-x:auto}
+.fig-scroll svg{display:block;width:100%;min-width:680px;height:auto}
+figcaption{font-size:14px;color:var(--muted);margin-top:10px;max-width:75ch}
+.dg{color:var(--fg)}
+.dg .node{fill:var(--surface-2);stroke:var(--line);stroke-width:1.5}
+.dg .node-hot{fill:var(--accent-soft);stroke:var(--accent);stroke-width:2}
+.dg .phone{fill:var(--bg);stroke:var(--muted);stroke-width:1.5}
+.dg .t-name{font:700 15px var(--f-display);fill:var(--fg)}
+.dg .t-sub{font:400 12px var(--f-body);fill:var(--muted)}
+.dg .t-id{font:500 12px var(--f-mono);fill:var(--fg)}
+.dg .edge{fill:none;stroke:var(--muted);stroke-width:1.5}
+.dg .edge-gate{stroke:var(--accent);stroke-width:2.2}
+.dg .edge-no{stroke-dasharray:5 4}
+.dg .t-edge{font:500 12px var(--f-body);fill:var(--muted)}
+.dg .t-gate{font:600 12px var(--f-body);fill:var(--accent)}
+.dg .ah{fill:var(--muted)}
+.dg .ah-gate{fill:var(--accent)}
+.dg .cross{stroke:var(--muted);stroke-width:2;stroke-linecap:round}
+
+/* Steps */
+.steps{list-style:none;counter-reset:step;padding:0;margin:10px 0 0}
+.steps > li{counter-increment:step;display:grid;grid-template-columns:34px minmax(0,1fr);gap:14px;padding-block:12px;border-top:1px solid var(--line)}
+.steps > li::before{content:counter(step);font:500 13px/26px var(--f-mono);text-align:center;width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--muted)}
+.steps b{font-weight:600}
+.plat{display:block;margin-top:6px;font-size:14.5px;color:var(--muted)}
+.plat span{font:600 11px/1 var(--f-mono);letter-spacing:.05em;text-transform:uppercase;color:var(--fg);background:var(--surface-2);border-radius:4px;padding:3px 6px;margin-right:6px}
+
+.callout{background:var(--accent-soft);border-radius:12px;padding:16px 18px 6px;margin:22px 0}
+.callout h3{margin-top:0;font-size:16.5px}
+
+/* Guards and gaps */
+.checks{list-style:none;padding:0;margin:8px 0 0}
+.checks li{display:grid;grid-template-columns:62px minmax(0,1fr);gap:14px;padding-block:12px;border-top:1px solid var(--line);max-width:none}
+.checks li > div{max-width:70ch}
+.tag{font:600 11px/1 var(--f-mono);letter-spacing:.05em;text-transform:uppercase;text-align:center;padding:5px 0;border-radius:6px;align-self:start;margin-top:3px}
+.tag-guard{background:var(--guard-soft);color:var(--guard)}
+.tag-gap{background:var(--gap-soft);color:var(--gap)}
+.checks b{font-weight:600}
+
+/* Two modes */
+.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:14px 0 6px}
+.mode{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--surface);min-width:0}
+.mode h4{font:700 15px/1.3 var(--f-display);margin:0 0 8px}
+.mode dl{margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;font-size:14.5px}
+.mode dt{color:var(--muted)}
+.mode dd{margin:0}
+
+/* Tables */
+.table-wrap{overflow-x:auto;margin:14px 0 8px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:720px;font-size:14.5px}
+th,td{text-align:left;vertical-align:top;padding:10px 14px}
+thead th{font:600 12px/1.3 var(--f-mono);letter-spacing:.05em;text-transform:uppercase;color:var(--muted);background:var(--surface-2)}
+tbody th{font-weight:600}
+tbody tr + tr th, tbody tr + tr td{border-top:1px solid var(--line)}
+td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+footer{border-top:1px solid var(--line);margin-top:30px}
+footer .wrap{padding-block:22px 40px;font-size:13.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<header class="band">
+  <div class="wrap">
+    <p class="eyebrow">zebra_handheld_scanner · Android and iOS · BLE</p>
+    <h1>How a scanner joins, stays with, and leaves a phone</h1>
+    <p class="lede">This report explains the connection rules of the plugin as ideas. It covers the first connection, reconnection, disconnection, and the guards that keep each scanner with its own phone.</p>
+    <ul class="meta">
+      <li>Plugin 1.0.0</li>
+      <li>Branch fix/long_qr</li>
+      <li>19 Nov 2026</li>
+    </ul>
+  </div>
+  <div class="scanline" aria-hidden="true"></div>
+</header>
+
+<nav class="wrap" aria-label="Sections">
+  <ul class="toc">
+    <li><a href="#short">Short answers</a></li>
+    <li><a href="#ideas">Key ideas</a></li>
+    <li><a href="#connect">Connect</a></li>
+    <li><a href="#reconnect">Reconnect</a></li>
+    <li><a href="#disconnect">Disconnect</a></li>
+    <li><a href="#scanner-side">Scanner to another phone</a></li>
+    <li><a href="#phone-side">Phone to another scanner</a></li>
+    <li><a href="#platforms">Android and iOS</a></li>
+    <li><a href="#open">Open points</a></li>
+  </ul>
+</nav>
+
+<main class="wrap">
+
+  <section id="short">
+    <p class="kicker">Summary</p>
+    <h2>Short answers</h2>
+    <div class="answers">
+      <div class="answer">
+        <h3>Connect, reconnect, disconnect</h3>
+        <p>The phone shows a QR code that carries its own id. The scanner that reads it announces that id over Bluetooth. The phone connects only to a scanner that announces its id, and then saves that scanner.</p>
+        <p>After a lost link, the phone tries again with the saved scanner only, until it succeeds or the app stops it. Disconnect keeps the saved scanner. Forget erases it and makes a new id.</p>
+      </div>
+      <div class="answer">
+        <h3>A scanner stays with its phone</h3>
+        <p>The scanner has no list of allowed phones. The protection lives in the phones. A phone reaches only for a scanner that carries its own id, or for its own saved scanner. A neighbour phone never matches your scanner on either test, so it leaves your scanner alone.</p>
+      </div>
+      <div class="answer">
+        <h3>A phone stays with its scanner</h3>
+        <p>The phone looks for scanners only while it pairs or reconnects, and it accepts only its id or its saved scanner. While connected, it ignores every other scanner, closes any other link, and turns only the connected scanner's data into barcodes.</p>
+        <p class="muted">These rules prevent mix-ups between phones that run this plugin. They do not stop a deliberate attacker.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="ideas">
+    <p class="kicker">Vocabulary</p>
+    <h2>Key ideas</h2>
+    <dl class="ideas">
+      <div>
+        <dt>Phone id</dt>
+        <dd>Eight hex characters, for example <span class="mono">7F3A0C91</span>, made from random data once for each app installation. It stays the same until the app forgets the scanner. On Android the vendor library makes and stores it. On iOS the plugin makes it.</dd>
+      </div>
+      <div>
+        <dt>Pairing QR code</dt>
+        <dd>A scanner configuration barcode with two parts: "switch to BLE" and the phone id. A scanner that reads it goes into pairing mode and announces that id.</dd>
+      </div>
+      <div>
+        <dt>Saved scanner</dt>
+        <dd>The one scanner the phone remembers. Android remembers its Bluetooth address. iOS remembers the identifier that iOS gave it, plus its Bluetooth address. A new pairing replaces the record.</dd>
+      </div>
+      <div>
+        <dt>Owner</dt>
+        <dd>The scanner that is connected now. There is never more than one. Only data from the owner becomes barcodes in the app.</dd>
+      </div>
+      <div>
+        <dt>Two addresses</dt>
+        <dd>In pairing mode the scanner announces the phone id from a temporary address. In normal mode it uses its own address and announces its name and address, without the id.</dd>
+      </div>
+      <div>
+        <dt>Four states</dt>
+        <dd>Idle, Pairing, Reconnecting, Connected. The app gets an event on each change, and a separate "connected / not connected" event.</dd>
+      </div>
+    </dl>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg class="dg" viewBox="0 0 820 390" role="img" aria-label="State diagram with four states: Idle, Pairing, Connected and Reconnecting. Only two arrows enter Connected: from Pairing when the scanner carries this phone's id, and from Reconnecting when it is the saved scanner.">
+          <defs>
+            <marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ag1" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path class="ah-gate" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Edges -->
+          <path class="edge" d="M725 127 C725 30 95 30 95 125" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="410" y="44" text-anchor="middle">Disconnect · Forget</text>
+
+          <path class="edge" d="M170 146 H333" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="252" y="138" text-anchor="middle">Pair · show QR</text>
+          <path class="edge" d="M335 164 H172" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="252" y="181" text-anchor="middle">Cancel · time limit</text>
+
+          <path class="edge edge-gate" d="M485 146 H648" marker-end="url(#ag1)"/>
+          <text class="t-gate" x="567" y="138" text-anchor="middle">carries my id</text>
+          <path class="edge" d="M650 164 H487" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="567" y="181" text-anchor="middle">Pair again</text>
+
+          <path class="edge" d="M110 183 V325 H333" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="222" y="317" text-anchor="middle">Reconnect</text>
+          <path class="edge" d="M335 345 H80 V185" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="208" y="362" text-anchor="middle">Disconnect · Forget</text>
+
+          <path class="edge" d="M710 183 V325 H487" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="598" y="317" text-anchor="middle">link lost</text>
+          <path class="edge edge-gate" d="M485 345 H740 V185" marker-end="url(#ag1)"/>
+          <text class="t-gate" x="612" y="362" text-anchor="middle">saved scanner only</text>
+
+          <path class="edge" d="M410 307 V185" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="418" y="250">Pair</text>
+
+          <!-- Nodes -->
+          <rect class="node" x="20" y="127" width="150" height="56" rx="10"/>
+          <text class="t-name" x="95" y="151" text-anchor="middle">Idle</text>
+          <text class="t-sub" x="95" y="169" text-anchor="middle">nothing running</text>
+
+          <rect class="node" x="335" y="127" width="150" height="56" rx="10"/>
+          <text class="t-name" x="410" y="151" text-anchor="middle">Pairing</text>
+          <text class="t-sub" x="410" y="169" text-anchor="middle">QR on screen</text>
+
+          <rect class="node node-hot" x="650" y="127" width="150" height="56" rx="10"/>
+          <text class="t-name" x="725" y="151" text-anchor="middle">Connected</text>
+          <text class="t-sub" x="725" y="169" text-anchor="middle">one owner</text>
+
+          <rect class="node" x="335" y="307" width="150" height="56" rx="10"/>
+          <text class="t-name" x="410" y="331" text-anchor="middle">Reconnecting</text>
+          <text class="t-sub" x="410" y="349" text-anchor="middle">keeps trying</text>
+        </svg>
+      </div>
+      <figcaption>The four states the app sees. Only two arrows lead into Connected, and each one has a gate: during pairing the scanner must carry this phone's id, and during reconnection it must be the saved scanner. On iOS the old scanner can stay connected while the state shows Pairing.</figcaption>
+    </figure>
+  </section>
+
+  <section id="connect">
+    <p class="kicker">Lifecycle</p>
+    <h2>Connect: the first pairing</h2>
+    <p>A scanner joins a phone only through a deliberate act. The operator points the scanner at the QR code on that phone's screen. The steps below happen in this order.</p>
+    <ol class="steps">
+      <li><div><b>The app asks to pair.</b> The phone checks that Bluetooth can work.
+        <span class="plat"><span>iOS</span>Bluetooth must be on, allowed and supported. Otherwise pairing stops with an error.</span>
+        <span class="plat"><span>Android</span>On Android 11 and older, Location must be on for the Bluetooth search. If it is off, the phone opens the settings and pairing stops.</span></div></li>
+      <li><div><b>The phone shows the QR code and starts to listen.</b> The code carries the phone id. The phone listens for a scanner that announces this id.
+        <span class="plat"><span>iOS</span>The search runs only while the app is in the foreground. It stops after 60 seconds by default.</span>
+        <span class="plat"><span>Android</span>The vendor library runs the search. The plugin sets no time limit of its own.</span></div></li>
+      <li><div><b>The operator scans the QR code with the scanner.</b> The scanner goes into BLE pairing mode and announces the phone id from a temporary address.</div></li>
+      <li><div><b>The phone matches the id.</b> Announcements with any other id, or with no id, are ignored.</div></li>
+      <li><div><b>The phone chooses one scanner.</b> Usually only one scanner read the code.
+        <span class="plat"><span>iOS</span>The phone waits 1.5 seconds to collect every scanner that announces the id. The saved scanner wins if it is among them. Otherwise the strongest signal wins.</span>
+        <span class="plat"><span>Android</span>The vendor library chooses.</span></div></li>
+      <li><div><b>The phone connects.</b>
+        <span class="plat"><span>iOS</span>The connection must succeed within 10 seconds. If it fails, the phone goes back to listening.</span>
+        <span class="plat"><span>Android</span>The vendor library connects to the temporary address, asks the scanner for its real address, tells it to leave pairing mode, and connects again on the real address. The app receives progress steps during this.</span></div></li>
+      <li><div><b>The scanner becomes the owner and the saved scanner.</b> Any older scanner is dropped and any reconnection to it stops. The app receives "connected".
+        <span class="plat"><span>iOS</span>Right after the connection, the phone asks the scanner for its real Bluetooth address and saves it. Reconnection needs it (see <a href="#two-addresses">two addresses</a>).</span></div></li>
+    </ol>
+
+    <div class="callout">
+      <h3>What happens to a scanner that is already connected?</h3>
+      <p><b>Android</b> drops it as soon as pairing starts, and stops any reconnection to it.</p>
+      <p><b>iOS</b> keeps it connected during pairing. It is replaced only when a different scanner completes pairing. If the operator cancels pairing, the old scanner simply stays.</p>
+    </div>
+  </section>
+
+  <section id="reconnect">
+    <p class="kicker">Lifecycle</p>
+    <h2>Reconnect: back to the saved scanner, and only to it</h2>
+
+    <h3>What starts a reconnection</h3>
+    <ul>
+      <li><b>The app asks</b>, usually when it starts. The plugin does not reconnect at launch on its own. The answer is "yes" if the scanner connects within the time limit (5 seconds by default), otherwise "no". After a "no", the plugin keeps trying in the background.</li>
+      <li><b>The link drops by accident</b>: the operator walks out of range, the scanner goes to sleep, or metal shelving blocks the signal. The plugin starts again by itself, after 1 second on Android and at once on iOS.</li>
+      <li><b>Bluetooth comes back on.</b> A scanner that was connected when Bluetooth went off becomes the target again.</li>
+    </ul>
+
+    <h3>Rules</h3>
+    <ul class="checks">
+      <li><span class="tag tag-guard">Rule</span><div><b>Saved scanner only.</b> The phone never searches for "any scanner" during reconnection.</div></li>
+      <li><span class="tag tag-guard">Rule</span><div><b>One attempt at a time.</b> If the app asks again, the new request waits for the same attempt. No second connection starts.</div></li>
+      <li><span class="tag tag-guard">Rule</span><div><b>It does not give up.</b> Attempts continue until the scanner connects, or until the app disconnects, forgets the scanner, or starts pairing.</div></li>
+      <li><span class="tag tag-guard">Rule</span><div><b>No saved scanner, or Bluetooth off when the app asks:</b> the answer is "no" at once, and nothing starts.</div></li>
+    </ul>
+
+    <h3>How the phone finds the saved scanner</h3>
+    <p><b>Android</b> connects straight to the saved Bluetooth address. If that fails, it tries again every 5 seconds while the app runs. If Bluetooth is off, it waits and checks again every 5 seconds.</p>
+    <p><b>iOS</b> uses three ways, in Apple's recommended order:</p>
+    <ol>
+      <li>It asks iOS for the device it already knows by its identifier and leaves a standing connection request. iOS completes the request when the scanner announces itself, even with the app in the background and with no time limit.</li>
+      <li>If iOS has forgotten the device (after a phone restart or a Bluetooth reset), it looks among the devices already connected to the phone.</li>
+      <li>While the app is in the foreground, it searches the air. An announcement that contains the saved Bluetooth address becomes the new target. The search restarts every 30 seconds so that iOS reports devices again. After a failed attempt, it tries again after 2 seconds.</li>
+    </ol>
+
+    <h3 id="two-addresses">Why iOS needs the real address</h3>
+    <div class="modes">
+      <div class="mode">
+        <h4>Pairing mode (after reading the QR code)</h4>
+        <dl>
+          <dt>Address</dt><dd>temporary</dd>
+          <dt>Announces</dt><dd>the phone id</dd>
+          <dt>Name</dt><dd>none</dd>
+        </dl>
+      </div>
+      <div class="mode">
+        <h4>Normal mode (every other time)</h4>
+        <dl>
+          <dt>Address</dt><dd>its own, fixed</dd>
+          <dt>Announces</dt><dd>its name and its own address</dd>
+          <dt>Phone id</dt><dd>none</dd>
+        </dl>
+      </div>
+    </div>
+    <p>iOS treats the two addresses as two different devices. The first connection uses the temporary address, so the identifier iOS saves at that moment points at a device that soon disappears. For this reason the phone asks the scanner for its real address right after each connection. The reconnection search then recognises the scanner by that address. After the first successful reconnection, iOS saves the identifier of the real address, and later reconnections work directly, also in the background.</p>
+    <p>Android does not need this step. The vendor library already moves to the real address during pairing.</p>
+
+    <h3>Strict mode (iOS only, optional)</h3>
+    <p>In strict mode the phone reconnects only if the saved scanner also announces this phone's id. This stops a phone from taking back a scanner that another phone paired with. The cost is high with this scanner model: it announces the id only in pairing mode. In practice, strict mode means the operator scans the QR code again after every lost link.</p>
+    <p>Android has no strict mode. After pairing, the vendor library tells the scanner to clear the id, so there is nothing to check.</p>
+  </section>
+
+  <section id="disconnect">
+    <p class="kicker">Lifecycle</p>
+    <h2>Disconnect: on purpose or by accident</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">Event</th><th scope="col">Cause</th><th scope="col">Link</th><th scope="col">Saved scanner</th><th scope="col">Phone id</th><th scope="col">What happens next</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Disconnect</th><td>the app</td><td>closed</td><td>kept</td><td>kept</td><td>Nothing, until the app asks to reconnect. Pairing and reconnection also stop.</td></tr>
+          <tr><th scope="row">Forget scanner</th><td>the app</td><td>closed</td><td>erased</td><td>new id</td><td>The scanner must pair again with the new QR code. Old QR codes (on screens, prints, screenshots) no longer match.</td></tr>
+          <tr><th scope="row">Link lost</th><td>distance, sleep, metal</td><td>lost</td><td>kept</td><td>kept</td><td>Automatic reconnection to the same scanner, and only to it.</td></tr>
+          <tr><th scope="row">Bluetooth off</th><td>user or system</td><td>lost</td><td>kept</td><td>kept</td><td>Reconnection resumes when Bluetooth is back.</td></tr>
+          <tr><th scope="row">Cancel pairing</th><td>the app</td><td>connected scanner stays</td><td>kept</td><td>kept</td><td>The phone stops listening for its id.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>On purpose or by accident</h3>
+    <p>The plugin must not reconnect after a disconnect that the app asked for. So it remembers every link it closes itself, and the close event of such a link does not start a reconnection. On Android, a close event from a scanner that is no longer the owner is ignored for the same reason.</p>
+
+    <h3>Data in transit</h3>
+    <p>When a link ends, a barcode that has only partly arrived is dropped. Open questions to the scanner (name, battery, firmware version) fail with "not connected".</p>
+
+    <h3>Forget scanner on Android</h3>
+    <p>The vendor library keeps its id in a file and also keeps a copy in memory. The plugin writes a new id to the file and tries to replace the copy in memory. If that works, the new id is active at once. If not, it becomes active after the next app start. Until then, a new pairing still shows the old id.</p>
+  </section>
+
+  <section id="scanner-side">
+    <p class="kicker">Isolation · question 1</p>
+    <h2>How does the plugin keep a scanner from joining another phone?</h2>
+    <p>The scanner does not choose its phone. Phones start connections, and the scanner answers. So the plugin protects a scanner by making every phone strict about which scanner it reaches for.</p>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg class="dg" viewBox="0 0 860 290" role="img" aria-label="Two phones and two scanners. Phone A is pairing and connects only to Scanner 1, which announces Phone A's id. Phone B is reconnecting and connects only to Scanner 2, its saved scanner. Each phone ignores the other scanner.">
+          <defs>
+            <marker id="ag2" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path class="ah-gate" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Phone A -->
+          <rect class="phone" x="20" y="30" width="190" height="230" rx="20"/>
+          <text class="t-name" x="115" y="70" text-anchor="middle">Phone A</text>
+          <text class="t-id" x="115" y="94" text-anchor="middle">id 7F3A0C91</text>
+          <text class="t-sub" x="115" y="118" text-anchor="middle">state: Pairing</text>
+          <text class="t-sub" x="115" y="138" text-anchor="middle">shows QR with its id</text>
+
+          <!-- Phone B -->
+          <rect class="phone" x="650" y="30" width="190" height="230" rx="20"/>
+          <text class="t-name" x="745" y="70" text-anchor="middle">Phone B</text>
+          <text class="t-id" x="745" y="94" text-anchor="middle">id C21E55B0</text>
+          <text class="t-sub" x="745" y="118" text-anchor="middle">state: Reconnecting</text>
+          <text class="t-sub" x="745" y="138" text-anchor="middle">saved: Scanner 2</text>
+
+          <!-- Scanners -->
+          <rect class="node" x="345" y="40" width="170" height="74" rx="10"/>
+          <text class="t-name" x="430" y="66" text-anchor="middle">Scanner 1</text>
+          <text class="t-sub" x="430" y="85" text-anchor="middle">pairing mode</text>
+          <text class="t-id" x="430" y="104" text-anchor="middle">announces 7F3A0C91</text>
+
+          <rect class="node" x="345" y="176" width="170" height="74" rx="10"/>
+          <text class="t-name" x="430" y="202" text-anchor="middle">Scanner 2</text>
+          <text class="t-sub" x="430" y="221" text-anchor="middle">normal mode</text>
+          <text class="t-sub" x="430" y="240" text-anchor="middle">announces its address</text>
+
+          <!-- Phone A edges -->
+          <path class="edge edge-gate" d="M210 77 H343" marker-end="url(#ag2)"/>
+          <text class="t-gate" x="277" y="68" text-anchor="middle">my id ✓</text>
+          <path class="edge edge-no" d="M210 213 H330"/>
+          <line class="cross" x1="332" y1="207" x2="340" y2="219"/>
+          <line class="cross" x1="340" y1="207" x2="332" y2="219"/>
+          <text class="t-edge" x="272" y="204" text-anchor="middle">no id of mine</text>
+
+          <!-- Phone B edges -->
+          <path class="edge edge-no" d="M650 77 H530"/>
+          <line class="cross" x1="520" y1="71" x2="528" y2="83"/>
+          <line class="cross" x1="528" y1="71" x2="520" y2="83"/>
+          <text class="t-edge" x="588" y="68" text-anchor="middle">not saved</text>
+          <path class="edge edge-gate" d="M650 213 H517" marker-end="url(#ag2)"/>
+          <text class="t-gate" x="583" y="204" text-anchor="middle">saved ✓</text>
+        </svg>
+      </div>
+      <figcaption>Each phone runs one test, which depends on its state. A pairing phone asks "does this scanner carry my id?". A reconnecting phone asks "is this my saved scanner?". A scanner that fails the test is ignored, so neither phone reaches for the other phone's scanner, even when both are close together.</figcaption>
+    </figure>
+
+    <ul class="checks">
+      <li><span class="tag tag-guard">Guard</span><div><b>The QR code belongs to one phone.</b> A scanner announces only the id of the phone whose QR code it read. Other phones that are pairing at the same moment ignore that id.</div></li>
+      <li><span class="tag tag-guard">Guard</span><div><b>No "nearest scanner" rule.</b> A phone never connects to a scanner because it is close or has a strong signal. iOS versions up to 0.0.13 did this (any scanner with a name ending in "BLE"). Version 1.0.0 removed it.</div></li>
+      <li><span class="tag tag-guard">Guard</span><div><b>Reconnection is personal.</b> A phone reconnects only to its own saved scanner. A neighbour phone has a different saved scanner, so it never reaches for yours.</div></li>
+      <li><span class="tag tag-guard">Guard</span><div><b>Pairing needs a physical act.</b> The scanner must read a code on that phone's screen while the phone is in pairing mode.</div></li>
+      <li><span class="tag tag-guard">Guard</span><div><b>One saved scanner per phone.</b> When a phone pairs a new scanner, it forgets the old record and stops reaching for the old scanner.</div></li>
+      <li><span class="tag tag-gap">Gap</span><div><b>Take-back.</b> Scanner 1 moves from phone B to phone A by reading A's QR code. Phone B still has scanner 1 saved and keeps trying to reconnect. When scanner 1 is free (asleep, out of range), phone B can reach it first. To prevent this, forget the scanner on phone B at hand-over, or use strict mode on iOS.</div></li>
+      <li><span class="tag tag-gap">Gap</span><div><b>Other software.</b> These rules hold only for phones that run this plugin version. A generic Bluetooth app, the vendor's own app, or an older plugin version can connect to any free scanner.</div></li>
+    </ul>
+  </section>
+
+  <section id="phone-side">
+    <p class="kicker">Isolation · question 2</p>
+    <h2>How does the plugin keep a phone from connecting to another scanner?</h2>
+    <p>The phone treats every scanner as a stranger unless it passes one of two tests: it carries the phone's id during pairing, or it is the saved scanner during reconnection. Everything else is ignored or closed.</p>
+
+    <ul class="checks">
+      <li><span class="tag tag-guard">Guard</span><div><b>Pairing accepts only this phone's id.</b> Announcements with another id, or with no id, are not candidates.</div></li>
+      <li><span class="tag tag-guard">Guard</span><div><b>Pairing has a short window.</b> The phone listens only while it is pairing. On iOS the window closes after 60 seconds by default. The app should cancel pairing when the pairing screen closes. Outside the window, the phone ignores all id announcements.</div></li>
+      <li><span class="tag tag-guard">Guard</span><div><b>A clear choice if two scanners read the same code.</b> On iOS, the saved scanner wins, otherwise the strongest signal, after a 1.5-second collection window.</div></li>
+      <li><span class="tag tag-guard">Guard</span><div><b>Reconnection only to the saved scanner.</b> Android matches the saved address. iOS matches the saved identifier or the saved address in the announcement.</div></li>
+      <li><span class="tag tag-guard">Guard</span><div><b>Ownership lock.</b> On iOS, the phone does not search at all while it is idle or connected, and it ignores what it hears. Any link that is not the pairing choice, the reconnection target or the owner is closed at once. A second scanner cannot replace the owner unless the operator pairs it.</div></li>
+      <li><span class="tag tag-guard">Guard</span><div><b>Data only from the owner.</b> On both platforms, data from any other link is dropped. On Android, a scanner that turns up connected is accepted only if it is the saved scanner and pairing is not running. A reconnection that completes after it was cancelled is closed again.</div></li>
+      <li><span class="tag tag-guard">Guard</span><div><b>Forget makes old codes useless.</b> A new id means that a scanner reading an old printed or photographed QR code never matches again.</div></li>
+      <li><span class="tag tag-gap">Gap</span><div><b>The id is not a secret.</b> It is shown on screen and sent over the air in plain form, and it is only 4 bytes. It prevents accidents, not attacks. A person who copies it could make a device announce it while the phone is pairing.</div></li>
+      <li><span class="tag tag-gap">Gap</span><div><b>Same code, two scanners.</b> If two scanners read the same QR code within the same 1.5 seconds on iOS, signal strength decides. On Android, the vendor library decides.</div></li>
+      <li><span class="tag tag-gap">Gap</span><div><b>Delayed id change on Android.</b> If the in-memory id cannot be replaced, the old id stays active until the next app start (see <a href="#disconnect">Forget scanner on Android</a>).</div></li>
+    </ul>
+  </section>
+
+  <section id="platforms">
+    <p class="kicker">Reference</p>
+    <h2>Android and iOS side by side</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">Topic</th><th scope="col">Android</th><th scope="col">iOS</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Who makes the phone id</th><td>Vendor library, once per installation</td><td>Plugin, 4 random bytes</td></tr>
+          <tr><th scope="row">Saved scanner</th><td>Bluetooth address</td><td>iOS identifier and Bluetooth address</td></tr>
+          <tr><th scope="row">Pairing time limit</th><td>None in the plugin</td><td>60 s by default</td></tr>
+          <tr><th scope="row">Connected scanner during pairing</th><td>Dropped when pairing starts</td><td>Kept until another scanner connects</td></tr>
+          <tr><th scope="row">Two scanners read the code</th><td>Vendor library chooses</td><td>Saved scanner, else strongest signal</td></tr>
+          <tr><th scope="row">Reconnection method</th><td>Direct connect to the saved address</td><td>Standing request, then search by address</td></tr>
+          <tr><th scope="row">Reconnection in the background</th><td>While the app runs</td><td>Standing request only; the search needs the foreground</td></tr>
+          <tr><th scope="row">Strict mode</th><td>Not available</td><td>Optional</td></tr>
+          <tr><th scope="row">New id after Forget</th><td>At once if possible, else after the next app start</td><td>At once</td></tr>
+          <tr><th scope="row">Extra information for the app</th><td>Pairing progress steps</td><td>Diagnostic log lines</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Timings</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">What</th><th scope="col">Android</th><th scope="col">iOS</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Pairing listens for</th><td class="num">no limit</td><td class="num">60 s</td></tr>
+          <tr><th scope="row">Collect candidates before choosing</th><td class="num">n/a</td><td class="num">1.5 s</td></tr>
+          <tr><th scope="row">Connection to the chosen scanner must finish in</th><td class="num">n/a</td><td class="num">10 s</td></tr>
+          <tr><th scope="row">Answer to a reconnect request (default)</th><td class="num">5 s</td><td class="num">5 s</td></tr>
+          <tr><th scope="row">First retry after a lost link</th><td class="num">1 s</td><td class="num">at once</td></tr>
+          <tr><th scope="row">Retry after a failed attempt</th><td class="num">5 s</td><td class="num">2 s</td></tr>
+          <tr><th scope="row">Search restart</th><td class="num">n/a</td><td class="num">30 s</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="open">
+    <p class="kicker">Next</p>
+    <h2>Open points</h2>
+    <ul class="checks">
+      <li><span class="tag tag-gap">Check</span><div><b>Confirm the address match on a device.</b> iOS reconnection depends on the address that the scanner reports being the same as the address in its announcement. The iPad logs suggest this, but it is not confirmed yet.</div></li>
+      <li><span class="tag tag-gap">Decide</span><div><b>Hand-over policy.</b> Choose how to close the take-back gap: forget the scanner on the old phone at every hand-over, or use strict mode on iOS and accept a QR scan after each lost link.</div></li>
+      <li><span class="tag tag-gap">Decide</span><div><b>Pairing time limit on Android.</b> iOS closes the pairing window after 60 seconds. Android depends on the vendor library and on the app cancelling pairing.</div></li>
+    </ul>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">Describes the plugin's behaviour on Android and iOS as of version 1.0.0 (branch fix/long_qr), 19 Nov 2026. Scanner details come from the vendor Android library and from iPad Bluetooth logs.</div>
+</footer>
+</body>
+</html>

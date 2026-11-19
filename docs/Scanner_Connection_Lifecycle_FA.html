@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>چرخهٔ اتصال اسکنر</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: slim dark header band with a laser scan line, then one right-to-left reading column; diagrams and tables widen to 1040px and scroll on phones. */
+:root{
+  --bg:#f2f4f8; --surface:#ffffff; --surface-2:#e8ecf3; --fg:#131926; --muted:#566074; --line:#d3d9e4;
+  --accent:#2445c4; --accent-soft:#e3e8fb;
+  --guard:#0b7550; --guard-soft:#dcf1e7;
+  --gap:#975200; --gap-soft:#fbecd5;
+  --laser:#e0352b;
+  --band:#141b2b; --band-fg:#eef1f7; --band-muted:#aab4c7; --band-line:#34405a;
+  --f-display:"Vazirmatn",Tahoma,"Segoe UI",sans-serif;
+  --f-body:"Vazirmatn",Tahoma,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1219; --surface:#161c26; --surface-2:#1e2633; --fg:#e4e8ef; --muted:#9aa4b5; --line:#2b3444;
+    --accent:#86a0ff; --accent-soft:#1b2547;
+    --guard:#52d3a2; --guard-soft:#102b22;
+    --gap:#f1b65c; --gap-soft:#2e2312;
+    --laser:#ff5a4f;
+    --band:#19212f; --band-fg:#eef1f7; --band-muted:#a3adc0; --band-line:#36425a;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1219; --surface:#161c26; --surface-2:#1e2633; --fg:#e4e8ef; --muted:#9aa4b5; --line:#2b3444;
+  --accent:#86a0ff; --accent-soft:#1b2547;
+  --guard:#52d3a2; --guard-soft:#102b22;
+  --gap:#f1b65c; --gap-soft:#2e2312;
+  --laser:#ff5a4f;
+  --band:#19212f; --band-fg:#eef1f7; --band-muted:#a3adc0; --band-line:#36425a;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.9 var(--f-body);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1040px;margin:0 auto;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+h1,h2,h3,h4{font-family:var(--f-display);text-wrap:balance;color:var(--fg)}
+a{color:var(--accent)}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.mono{font-family:var(--f-mono);font-size:.88em;direction:ltr;unicode-bidi:isolate}
+.ltr{direction:ltr;unicode-bidi:isolate}
+
+/* Header band */
+.band{background:var(--band);color:var(--band-fg);position:relative}
+.band .wrap{padding-block:44px 40px}
+.eyebrow{font:500 13px/1.6 var(--f-body);color:var(--band-muted);margin:0}
+.band h1{color:var(--band-fg);font-size:clamp(26px,4.4vw,40px);line-height:1.35;font-weight:800;margin:12px 0 14px;max-width:24ch}
+.lede{max-width:62ch;color:var(--band-muted);font-size:17px;margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 0;padding:0;list-style:none}
+.meta li{font:500 12.5px/1 var(--f-body);color:var(--band-muted);border:1px solid var(--band-line);border-radius:999px;padding:8px 12px}
+.scanline{position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--laser);box-shadow:0 0 10px 1px var(--laser)}
+
+/* Table of contents */
+.toc{display:flex;flex-wrap:wrap;gap:8px;padding-block:22px 6px;margin:0;list-style:none;padding-inline:0}
+.toc a{display:inline-block;text-decoration:none;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px 13px;font-size:14px}
+.toc a:hover{border-color:var(--accent);color:var(--accent)}
+
+/* Sections */
+main section{padding-block:34px 10px}
+main section + section{border-top:1px solid var(--line)}
+.kicker{font:600 13px/1.5 var(--f-body);color:var(--accent);margin:0}
+h2{font-size:clamp(21px,3vw,27px);line-height:1.45;margin:6px 0 14px;font-weight:800}
+h3{font-size:18px;line-height:1.5;margin:26px 0 8px;font-weight:700}
+p,li{max-width:72ch}
+p{margin:0 0 12px}
+.muted{color:var(--muted)}
+
+/* Short answers */
+.answers{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;margin-top:8px}
+.answer{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 18px 8px;min-width:0}
+.answer h3{margin:0 0 8px;font-size:17px}
+.answer p{font-size:15px}
+
+/* Key ideas */
+.ideas{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:0 28px;margin:6px 0 0}
+.ideas div{border-top:1px solid var(--line);padding-block:14px;min-width:0}
+.ideas dt{font:700 16px/1.5 var(--f-display);margin-bottom:4px}
+.ideas dd{margin:0;color:var(--muted);font-size:15px}
+
+/* Figures */
+figure{margin:24px 0;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 16px 14px}
+.fig-scroll{overflow-x:auto}
+.fig-scroll svg{display:block;width:100%;min-width:680px;height:auto}
+figcaption{font-size:14px;color:var(--muted);margin-top:10px;max-width:78ch}
+.dg{color:var(--fg)}
+.dg .node{fill:var(--surface-2);stroke:var(--line);stroke-width:1.5}
+.dg .node-hot{fill:var(--accent-soft);stroke:var(--accent);stroke-width:2}
+.dg .phone{fill:var(--bg);stroke:var(--muted);stroke-width:1.5}
+.dg .t-name{font:700 15px var(--f-display);fill:var(--fg)}
+.dg .t-sub{font:400 12.5px var(--f-body);fill:var(--muted)}
+.dg .t-id{font:500 12px var(--f-mono);fill:var(--fg)}
+.dg .edge{fill:none;stroke:var(--muted);stroke-width:1.5}
+.dg .edge-gate{stroke:var(--accent);stroke-width:2.2}
+.dg .edge-no{stroke-dasharray:5 4}
+.dg .t-edge{font:500 12.5px var(--f-body);fill:var(--muted)}
+.dg .t-gate{font:700 12.5px var(--f-body);fill:var(--accent)}
+.dg .ah{fill:var(--muted)}
+.dg .ah-gate{fill:var(--accent)}
+.dg .cross{stroke:var(--muted);stroke-width:2;stroke-linecap:round}
+
+/* Steps */
+.steps{list-style:none;counter-reset:step;padding:0;margin:10px 0 0}
+.steps > li{counter-increment:step;display:grid;grid-template-columns:34px minmax(0,1fr);gap:14px;padding-block:12px;border-top:1px solid var(--line)}
+.steps > li::before{content:counter(step, persian);font:600 14px/26px var(--f-body);text-align:center;width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--muted)}
+.steps b{font-weight:700}
+.plat{display:block;margin-top:6px;font-size:14.5px;color:var(--muted)}
+.plat span{font:700 12px/1 var(--f-body);color:var(--fg);background:var(--surface-2);border-radius:4px;padding:4px 7px;margin-inline-end:6px}
+
+.callout{background:var(--accent-soft);border-radius:12px;padding:16px 18px 6px;margin:22px 0}
+.callout h3{margin-top:0;font-size:16.5px}
+
+/* Guards and gaps */
+.checks{list-style:none;padding:0;margin:8px 0 0}
+.checks li{display:grid;grid-template-columns:62px minmax(0,1fr);gap:14px;padding-block:12px;border-top:1px solid var(--line);max-width:none}
+.checks li > div{max-width:72ch}
+.tag{font:700 12px/1 var(--f-body);text-align:center;padding:6px 0;border-radius:6px;align-self:start;margin-top:4px}
+.tag-guard{background:var(--guard-soft);color:var(--guard)}
+.tag-gap{background:var(--gap-soft);color:var(--gap)}
+.checks b{font-weight:700}
+
+/* Two modes */
+.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:14px 0 6px}
+.mode{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--surface);min-width:0}
+.mode h4{font:700 15.5px/1.5 var(--f-display);margin:0 0 8px}
+.mode dl{margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;font-size:14.5px}
+.mode dt{color:var(--muted)}
+.mode dd{margin:0}
+
+/* Tables */
+.table-wrap{overflow-x:auto;margin:14px 0 8px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:720px;font-size:14.5px}
+th,td{text-align:start;vertical-align:top;padding:10px 14px}
+thead th{font:700 13px/1.5 var(--f-body);color:var(--muted);background:var(--surface-2)}
+tbody th{font-weight:700}
+tbody tr + tr th, tbody tr + tr td{border-top:1px solid var(--line)}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+
+footer{border-top:1px solid var(--line);margin-top:30px}
+footer .wrap{padding-block:22px 40px;font-size:13.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<header class="band">
+  <div class="wrap">
+    <p class="eyebrow"><span class="ltr">zebra_handheld_scanner</span> · اندروید و <span class="ltr">iOS</span> · <span class="ltr">BLE</span></p>
+    <h1>اسکنر چگونه به گوشی وصل می‌شود، کنارش می‌ماند و از آن جدا می‌شود</h1>
+    <p class="lede">این گزارش قواعد اتصال پلاگین را در قالب مفهوم و ایده توضیح می‌دهد: اتصال اول، اتصال مجدد، قطع اتصال، و محافظ‌هایی که هر اسکنر را کنار گوشی خودش نگه می‌دارند.</p>
+    <ul class="meta">
+      <li>پلاگین <span class="ltr">1.0.0</span></li>
+      <li>شاخهٔ <span class="ltr">fix/long_qr</span></li>
+      <li>۱۹ نوامبر ۲۰۲۶</li>
+    </ul>
+  </div>
+  <div class="scanline" aria-hidden="true"></div>
+</header>
+
+<nav class="wrap" aria-label="بخش‌ها">
+  <ul class="toc">
+    <li><a href="#short">پاسخ کوتاه</a></li>
+    <li><a href="#ideas">مفاهیم کلیدی</a></li>
+    <li><a href="#connect">اتصال</a></li>
+    <li><a href="#reconnect">اتصال مجدد</a></li>
+    <li><a href="#disconnect">قطع اتصال</a></li>
+    <li><a href="#scanner-side">اسکنر و گوشی دیگر</a></li>
+    <li><a href="#phone-side">گوشی و اسکنر دیگر</a></li>
+    <li><a href="#platforms">اندروید و iOS</a></li>
+    <li><a href="#open">موارد باز</a></li>
+  </ul>
+</nav>
+
+<main class="wrap">
+
+  <section id="short">
+    <p class="kicker">خلاصه</p>
+    <h2>پاسخ کوتاه</h2>
+    <div class="answers">
+      <div class="answer">
+        <h3>اتصال، اتصال مجدد، قطع اتصال</h3>
+        <p>گوشی یک کد QR نشان می‌دهد که شناسهٔ خود گوشی در آن است. اسکنری که آن را بخواند، همین شناسه را از طریق بلوتوث اعلام می‌کند. گوشی فقط به اسکنری وصل می‌شود که شناسهٔ او را اعلام کند و سپس آن اسکنر را ذخیره می‌کند.</p>
+        <p>پس از قطع شدن اتصال، گوشی فقط با اسکنر ذخیره‌شده دوباره تلاش می‌کند تا موفق شود یا برنامه آن را متوقف کند. «قطع اتصال» اسکنر ذخیره‌شده را نگه می‌دارد. «فراموش کردن» آن را پاک می‌کند و شناسهٔ تازه می‌سازد.</p>
+      </div>
+      <div class="answer">
+        <h3>اسکنر کنار گوشی خودش می‌ماند</h3>
+        <p>اسکنر هیچ فهرستی از گوشی‌های مجاز ندارد. حفاظت در خود گوشی‌هاست. هر گوشی فقط سراغ اسکنری می‌رود که شناسهٔ خودش را دارد، یا سراغ اسکنر ذخیره‌شدهٔ خودش. گوشی همسایه در هیچ‌کدام از این دو آزمون با اسکنر شما جور نمی‌شود، پس کاری به آن ندارد.</p>
+      </div>
+      <div class="answer">
+        <h3>گوشی کنار اسکنر خودش می‌ماند</h3>
+        <p>گوشی فقط هنگام جفت‌سازی یا اتصال مجدد دنبال اسکنر می‌گردد و فقط شناسهٔ خودش یا اسکنر ذخیره‌شده‌اش را می‌پذیرد. وقتی متصل است، اسکنرهای دیگر را نادیده می‌گیرد، هر اتصال دیگری را می‌بندد و فقط دادهٔ اسکنر متصل را به بارکد تبدیل می‌کند.</p>
+        <p class="muted">این قواعد جلوی قاطی شدن گوشی‌هایی را می‌گیرند که این پلاگین را اجرا می‌کنند. جلوی مهاجمی را که عمداً حمله کند نمی‌گیرند.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="ideas">
+    <p class="kicker">واژه‌ها</p>
+    <h2>مفاهیم کلیدی</h2>
+    <dl class="ideas">
+      <div>
+        <dt>شناسهٔ گوشی</dt>
+        <dd>هشت نویسهٔ هگز، مثلاً <span class="mono">7F3A0C91</span>، که یک بار برای هر نصب برنامه از دادهٔ تصادفی ساخته می‌شود. تا وقتی برنامه اسکنر را فراموش نکند، ثابت می‌ماند. در اندروید کتابخانهٔ سازنده آن را می‌سازد و نگه می‌دارد. در iOS خود پلاگین آن را می‌سازد.</dd>
+      </div>
+      <div>
+        <dt>کد QR جفت‌سازی</dt>
+        <dd>یک بارکد پیکربندی اسکنر با دو بخش: «به BLE برو» و شناسهٔ گوشی. اسکنری که آن را بخواند به حالت جفت‌سازی می‌رود و آن شناسه را اعلام می‌کند.</dd>
+      </div>
+      <div>
+        <dt>اسکنر ذخیره‌شده</dt>
+        <dd>تنها اسکنری که گوشی به خاطر می‌سپارد. اندروید آدرس بلوتوث آن را نگه می‌دارد. iOS شناسهٔ سیستمی‌ای را که خود iOS به اسکنر داده، به‌همراه آدرس بلوتوثش نگه می‌دارد. جفت‌سازی تازه این رکورد را جایگزین می‌کند.</dd>
+      </div>
+      <div>
+        <dt>مالک</dt>
+        <dd>اسکنری که الان متصل است. هیچ‌وقت بیش از یکی نیست. فقط دادهٔ مالک در برنامه به بارکد تبدیل می‌شود.</dd>
+      </div>
+      <div>
+        <dt>دو آدرس</dt>
+        <dd>در حالت جفت‌سازی، اسکنر شناسهٔ گوشی را از یک آدرس موقت اعلام می‌کند. در حالت عادی از آدرس خودش استفاده می‌کند و نام و آدرسش را اعلام می‌کند، بدون شناسه.</dd>
+      </div>
+      <div>
+        <dt>چهار وضعیت</dt>
+        <dd>بیکار (<span class="ltr">idle</span>)، جفت‌سازی (<span class="ltr">pairing</span>)، اتصال مجدد (<span class="ltr">reconnecting</span>)، متصل (<span class="ltr">connected</span>). برنامه با هر تغییر یک رویداد می‌گیرد، و یک رویداد جداگانهٔ «متصل / نامتصل».</dd>
+      </div>
+    </dl>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg class="dg" viewBox="0 0 820 390" role="img" aria-label="نمودار وضعیت با چهار وضعیت: بیکار، جفت‌سازی، متصل و اتصال مجدد. فقط دو پیکان وارد «متصل» می‌شوند: از جفت‌سازی وقتی اسکنر شناسهٔ این گوشی را دارد، و از اتصال مجدد وقتی همان اسکنر ذخیره‌شده است.">
+          <defs>
+            <marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ag1" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path class="ah-gate" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Edges (right-to-left layout: Idle on the right, Connected on the left) -->
+          <path class="edge" d="M95 127 C95 30 725 30 725 125" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="410" y="44" text-anchor="middle">قطع اتصال · فراموش کردن</text>
+
+          <path class="edge" d="M650 146 H487" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="568" y="138" text-anchor="middle">جفت‌سازی · نمایش QR</text>
+          <path class="edge" d="M485 164 H648" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="568" y="183" text-anchor="middle">لغو · پایان مهلت</text>
+
+          <path class="edge edge-gate" d="M335 146 H172" marker-end="url(#ag1)"/>
+          <text class="t-gate" x="253" y="138" text-anchor="middle">شناسهٔ من را دارد</text>
+          <path class="edge" d="M170 164 H333" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="253" y="183" text-anchor="middle">جفت‌سازی دوباره</text>
+
+          <path class="edge" d="M710 183 V325 H487" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="598" y="317" text-anchor="middle">اتصال مجدد</text>
+          <path class="edge" d="M485 345 H740 V185" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="612" y="364" text-anchor="middle">قطع اتصال · فراموش کردن</text>
+
+          <path class="edge" d="M110 183 V325 H333" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="222" y="317" text-anchor="middle">قطع ناخواسته</text>
+          <path class="edge edge-gate" d="M335 345 H80 V185" marker-end="url(#ag1)"/>
+          <text class="t-gate" x="208" y="364" text-anchor="middle">فقط اسکنر ذخیره‌شده</text>
+
+          <path class="edge" d="M410 307 V185" marker-end="url(#ah1)"/>
+          <text class="t-edge" x="455" y="250" text-anchor="middle">جفت‌سازی</text>
+
+          <!-- Nodes -->
+          <rect class="node" x="650" y="127" width="150" height="56" rx="10"/>
+          <text class="t-name" x="725" y="150" text-anchor="middle">بیکار</text>
+          <text class="t-sub" x="725" y="171" text-anchor="middle">کاری در جریان نیست</text>
+
+          <rect class="node" x="335" y="127" width="150" height="56" rx="10"/>
+          <text class="t-name" x="410" y="150" text-anchor="middle">جفت‌سازی</text>
+          <text class="t-sub" x="410" y="171" text-anchor="middle">QR روی صفحه</text>
+
+          <rect class="node node-hot" x="20" y="127" width="150" height="56" rx="10"/>
+          <text class="t-name" x="95" y="150" text-anchor="middle">متصل</text>
+          <text class="t-sub" x="95" y="171" text-anchor="middle">یک مالک</text>
+
+          <rect class="node" x="335" y="307" width="150" height="56" rx="10"/>
+          <text class="t-name" x="410" y="330" text-anchor="middle">اتصال مجدد</text>
+          <text class="t-sub" x="410" y="351" text-anchor="middle">پیوسته تلاش می‌کند</text>
+        </svg>
+      </div>
+      <figcaption>چهار وضعیتی که برنامه می‌بیند. فقط دو پیکان وارد «متصل» می‌شوند و هر کدام یک دروازه دارند: در جفت‌سازی، اسکنر باید شناسهٔ این گوشی را داشته باشد و در اتصال مجدد، باید همان اسکنر ذخیره‌شده باشد. در iOS، اسکنر قبلی ممکن است متصل بماند در حالی که وضعیت «جفت‌سازی» را نشان می‌دهد.</figcaption>
+    </figure>
+  </section>
+
+  <section id="connect">
+    <p class="kicker">چرخهٔ اتصال</p>
+    <h2>اتصال: جفت‌سازی اول</h2>
+    <p>اسکنر فقط با یک کار عمدی به گوشی می‌پیوندد: اپراتور اسکنر را به سمت کد QR روی صفحهٔ همان گوشی می‌گیرد. مراحل زیر به همین ترتیب رخ می‌دهند.</p>
+    <ol class="steps">
+      <li><div><b>برنامه درخواست جفت‌سازی می‌دهد.</b> گوشی بررسی می‌کند که بلوتوث آمادهٔ کار باشد.
+        <span class="plat"><span>iOS</span>بلوتوث باید روشن، مجاز و پشتیبانی‌شده باشد. در غیر این صورت جفت‌سازی با خطا متوقف می‌شود.</span>
+        <span class="plat"><span>اندروید</span>در اندروید ۱۱ و قدیمی‌تر، برای جست‌وجوی بلوتوث باید «موقعیت مکانی» روشن باشد. اگر خاموش باشد، گوشی صفحهٔ تنظیمات را باز می‌کند و جفت‌سازی متوقف می‌شود.</span></div></li>
+      <li><div><b>گوشی کد QR را نشان می‌دهد و شروع به شنیدن می‌کند.</b> کد، شناسهٔ گوشی را دارد. گوشی منتظر اسکنری می‌ماند که این شناسه را اعلام کند.
+        <span class="plat"><span>iOS</span>جست‌وجو فقط وقتی برنامه در پیش‌زمینه است اجرا می‌شود و به‌طور پیش‌فرض پس از ۶۰ ثانیه متوقف می‌شود.</span>
+        <span class="plat"><span>اندروید</span>جست‌وجو را کتابخانهٔ سازنده انجام می‌دهد. پلاگین هیچ محدودیت زمانی از خودش ندارد.</span></div></li>
+      <li><div><b>اپراتور کد QR را با اسکنر می‌خواند.</b> اسکنر به حالت جفت‌سازی BLE می‌رود و شناسهٔ گوشی را از یک آدرس موقت اعلام می‌کند.</div></li>
+      <li><div><b>گوشی شناسه را تطبیق می‌دهد.</b> اعلام‌هایی با شناسهٔ دیگر، یا بدون شناسه، نادیده گرفته می‌شوند.</div></li>
+      <li><div><b>گوشی یک اسکنر را انتخاب می‌کند.</b> معمولاً فقط یک اسکنر کد را خوانده است.
+        <span class="plat"><span>iOS</span>گوشی ۱٫۵ ثانیه صبر می‌کند تا همهٔ اسکنرهایی را که شناسه را اعلام می‌کنند جمع کند. اگر اسکنر ذخیره‌شده میان آن‌ها باشد، برنده است. وگرنه قوی‌ترین سیگنال برنده است.</span>
+        <span class="plat"><span>اندروید</span>کتابخانهٔ سازنده انتخاب می‌کند.</span></div></li>
+      <li><div><b>گوشی وصل می‌شود.</b>
+        <span class="plat"><span>iOS</span>اتصال باید ظرف ۱۰ ثانیه برقرار شود. اگر نشود، گوشی دوباره به شنیدن برمی‌گردد.</span>
+        <span class="plat"><span>اندروید</span>کتابخانهٔ سازنده به آدرس موقت وصل می‌شود، آدرس واقعی اسکنر را از خودش می‌پرسد، به آن می‌گوید از حالت جفت‌سازی خارج شود، و دوباره روی آدرس واقعی وصل می‌شود. در این مدت برنامه مراحل پیشرفت را دریافت می‌کند.</span></div></li>
+      <li><div><b>اسکنر، مالک و اسکنر ذخیره‌شده می‌شود.</b> هر اسکنر قدیمی‌تر کنار گذاشته می‌شود و هر تلاش اتصال مجدد به آن متوقف می‌شود. برنامه رویداد «متصل» را می‌گیرد.
+        <span class="plat"><span>iOS</span>بلافاصله پس از اتصال، گوشی آدرس بلوتوث واقعی اسکنر را از خودش می‌پرسد و ذخیره می‌کند. اتصال مجدد به آن نیاز دارد (بخش <a href="#two-addresses">دو آدرس</a> را ببینید).</span></div></li>
+    </ol>
+
+    <div class="callout">
+      <h3>اسکنری که از قبل متصل است چه می‌شود؟</h3>
+      <p><b>اندروید</b> به محض شروع جفت‌سازی آن را قطع می‌کند و هر اتصال مجدد به آن را متوقف می‌کند.</p>
+      <p><b>iOS</b> آن را در طول جفت‌سازی متصل نگه می‌دارد. فقط وقتی جایگزین می‌شود که اسکنر دیگری جفت‌سازی را کامل کند. اگر اپراتور جفت‌سازی را لغو کند، اسکنر قبلی همچنان متصل می‌ماند.</p>
+    </div>
+  </section>
+
+  <section id="reconnect">
+    <p class="kicker">چرخهٔ اتصال</p>
+    <h2>اتصال مجدد: برگشت به اسکنر ذخیره‌شده، و فقط به آن</h2>
+
+    <h3>چه چیزی اتصال مجدد را شروع می‌کند</h3>
+    <ul>
+      <li><b>برنامه درخواست می‌دهد</b>، معمولاً هنگام شروع. پلاگین هنگام اجرای برنامه خودبه‌خود دوباره وصل نمی‌شود. اگر اسکنر در مهلت (پیش‌فرض ۵ ثانیه) وصل شود پاسخ «بله» است، وگرنه «نه». پس از «نه»، پلاگین در پس‌زمینه به تلاش ادامه می‌دهد.</li>
+      <li><b>اتصال ناخواسته قطع می‌شود</b>: اپراتور از برد خارج می‌شود، اسکنر به خواب می‌رود، یا قفسهٔ فلزی جلوی سیگنال را می‌گیرد. پلاگین خودش دوباره شروع می‌کند: در اندروید پس از ۱ ثانیه و در iOS بلافاصله.</li>
+      <li><b>بلوتوث دوباره روشن می‌شود.</b> اسکنری که هنگام خاموش شدن بلوتوث متصل بود، دوباره هدف می‌شود.</li>
+    </ul>
+
+    <h3>قواعد</h3>
+    <ul class="checks">
+      <li><span class="tag tag-guard">قاعده</span><div><b>فقط اسکنر ذخیره‌شده.</b> گوشی در اتصال مجدد هرگز دنبال «هر اسکنری» نمی‌گردد.</div></li>
+      <li><span class="tag tag-guard">قاعده</span><div><b>هر بار فقط یک تلاش.</b> اگر برنامه دوباره درخواست دهد، درخواست تازه منتظر همان تلاش می‌ماند. اتصال دومی شروع نمی‌شود.</div></li>
+      <li><span class="tag tag-guard">قاعده</span><div><b>تسلیم نمی‌شود.</b> تلاش‌ها ادامه دارند تا اسکنر وصل شود، یا برنامه اتصال را قطع کند، اسکنر را فراموش کند یا جفت‌سازی را شروع کند.</div></li>
+      <li><span class="tag tag-guard">قاعده</span><div><b>اسکنر ذخیره‌شده‌ای نیست، یا بلوتوث هنگام درخواست خاموش است:</b> پاسخ بلافاصله «نه» است و چیزی شروع نمی‌شود.</div></li>
+    </ul>
+
+    <h3>گوشی چگونه اسکنر ذخیره‌شده را پیدا می‌کند</h3>
+    <p><b>اندروید</b> مستقیم به آدرس بلوتوث ذخیره‌شده وصل می‌شود. اگر نشود، تا وقتی برنامه در حال اجراست هر ۵ ثانیه دوباره تلاش می‌کند. اگر بلوتوث خاموش باشد، صبر می‌کند و هر ۵ ثانیه دوباره بررسی می‌کند.</p>
+    <p><b>iOS</b> به ترتیبی که اپل توصیه می‌کند، از سه راه استفاده می‌کند:</p>
+    <ol>
+      <li>دستگاهی را که iOS با شناسهٔ سیستمی‌اش می‌شناسد می‌خواهد و یک درخواست اتصال دائمی ثبت می‌کند. iOS هر وقت اسکنر خودش را اعلام کند این درخواست را کامل می‌کند، حتی وقتی برنامه در پس‌زمینه است و بدون محدودیت زمانی.</li>
+      <li>اگر iOS دستگاه را فراموش کرده باشد (پس از راه‌اندازی مجدد گوشی یا ریست بلوتوث)، میان دستگاه‌هایی که از قبل به گوشی وصل‌اند می‌گردد.</li>
+      <li>وقتی برنامه در پیش‌زمینه است، هوا را جست‌وجو می‌کند. اعلامی که آدرس بلوتوث ذخیره‌شده در آن باشد، هدف تازه می‌شود. جست‌وجو هر ۳۰ ثانیه از نو شروع می‌شود تا iOS دوباره دستگاه‌ها را گزارش کند. پس از یک تلاش ناموفق، ۲ ثانیه بعد دوباره تلاش می‌کند.</li>
+    </ol>
+
+    <h3 id="two-addresses">چرا iOS به آدرس واقعی نیاز دارد</h3>
+    <div class="modes">
+      <div class="mode">
+        <h4>حالت جفت‌سازی (پس از خواندن کد QR)</h4>
+        <dl>
+          <dt>آدرس</dt><dd>موقت</dd>
+          <dt>اعلام می‌کند</dt><dd>شناسهٔ گوشی</dd>
+          <dt>نام</dt><dd>ندارد</dd>
+        </dl>
+      </div>
+      <div class="mode">
+        <h4>حالت عادی (بقیهٔ اوقات)</h4>
+        <dl>
+          <dt>آدرس</dt><dd>آدرس خودش، ثابت</dd>
+          <dt>اعلام می‌کند</dt><dd>نام و آدرس خودش</dd>
+          <dt>شناسهٔ گوشی</dt><dd>ندارد</dd>
+        </dl>
+      </div>
+    </div>
+    <p>iOS این دو آدرس را دو دستگاه جدا می‌بیند. اتصال اول از آدرس موقت است، پس شناسهٔ سیستمی‌ای که iOS در آن لحظه ذخیره می‌کند به دستگاهی اشاره دارد که به‌زودی ناپدید می‌شود. به همین دلیل گوشی بلافاصله پس از هر اتصال، آدرس واقعی اسکنر را از خودش می‌پرسد. سپس جست‌وجوی اتصال مجدد، اسکنر را با همین آدرس تشخیص می‌دهد. پس از اولین اتصال مجدد موفق، iOS شناسهٔ سیستمی آدرس واقعی را ذخیره می‌کند و اتصال‌های مجدد بعدی مستقیم کار می‌کنند، حتی در پس‌زمینه.</p>
+    <p>اندروید به این مرحله نیاز ندارد. کتابخانهٔ سازنده خودش در جفت‌سازی به آدرس واقعی می‌رود.</p>
+
+    <h3>حالت سخت‌گیرانه (فقط iOS، اختیاری)</h3>
+    <p>در حالت سخت‌گیرانه، گوشی فقط وقتی دوباره وصل می‌شود که اسکنر ذخیره‌شده شناسهٔ این گوشی را هم اعلام کند. این کار جلوی گوشی‌ای را می‌گیرد که بخواهد اسکنری را که گوشی دیگری جفت کرده پس بگیرد. با این مدل اسکنر هزینه‌اش بالاست: اسکنر شناسه را فقط در حالت جفت‌سازی اعلام می‌کند. در عمل، حالت سخت‌گیرانه یعنی اپراتور پس از هر قطع اتصال باید دوباره کد QR را بخواند.</p>
+    <p>اندروید حالت سخت‌گیرانه ندارد. پس از جفت‌سازی، کتابخانهٔ سازنده به اسکنر می‌گوید شناسه را پاک کند، پس چیزی برای بررسی نمی‌ماند.</p>
+  </section>
+
+  <section id="disconnect">
+    <p class="kicker">چرخهٔ اتصال</p>
+    <h2>قطع اتصال: عمدی یا ناخواسته</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">رویداد</th><th scope="col">علت</th><th scope="col">اتصال</th><th scope="col">اسکنر ذخیره‌شده</th><th scope="col">شناسهٔ گوشی</th><th scope="col">بعد چه می‌شود</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">قطع اتصال</th><td>برنامه</td><td>بسته می‌شود</td><td>می‌ماند</td><td>می‌ماند</td><td>هیچ، تا برنامه درخواست اتصال مجدد بدهد. جفت‌سازی و اتصال مجدد هم متوقف می‌شوند.</td></tr>
+          <tr><th scope="row">فراموش کردن اسکنر</th><td>برنامه</td><td>بسته می‌شود</td><td>پاک می‌شود</td><td>شناسهٔ تازه</td><td>اسکنر باید با کد QR تازه دوباره جفت شود. کدهای QR قدیمی (روی صفحه، چاپی، اسکرین‌شات) دیگر جور نمی‌شوند.</td></tr>
+          <tr><th scope="row">قطع ناخواسته</th><td>فاصله، خواب، فلز</td><td>از دست می‌رود</td><td>می‌ماند</td><td>می‌ماند</td><td>اتصال مجدد خودکار به همان اسکنر، و فقط به آن.</td></tr>
+          <tr><th scope="row">خاموش شدن بلوتوث</th><td>کاربر یا سیستم</td><td>از دست می‌رود</td><td>می‌ماند</td><td>می‌ماند</td><td>وقتی بلوتوث برگردد، اتصال مجدد ادامه پیدا می‌کند.</td></tr>
+          <tr><th scope="row">لغو جفت‌سازی</th><td>برنامه</td><td>اسکنر متصل می‌ماند</td><td>می‌ماند</td><td>می‌ماند</td><td>گوشی دیگر منتظر شناسه‌اش نمی‌ماند.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>عمدی یا ناخواسته</h3>
+    <p>پلاگین نباید پس از قطع اتصالی که برنامه خواسته دوباره وصل شود. پس هر اتصالی را که خودش می‌بندد به خاطر می‌سپارد، و رویداد بسته شدن چنین اتصالی اتصال مجدد را شروع نمی‌کند. در اندروید، به همین دلیل، رویداد بسته شدنِ اسکنری که دیگر مالک نیست نادیده گرفته می‌شود.</p>
+
+    <h3>داده‌های در راه</h3>
+    <p>وقتی اتصال تمام می‌شود، بارکدی که فقط بخشی از آن رسیده دور ریخته می‌شود. پرسش‌های باز از اسکنر (نام، باتری، نسخهٔ فریم‌ور) با خطای «متصل نیست» تمام می‌شوند.</p>
+
+    <h3 id="forget-android">فراموش کردن اسکنر در اندروید</h3>
+    <p>کتابخانهٔ سازنده شناسه را در یک فایل نگه می‌دارد و یک نسخه هم در حافظه دارد. پلاگین شناسهٔ تازه را در فایل می‌نویسد و سعی می‌کند نسخهٔ حافظه را هم عوض کند. اگر موفق شود، شناسهٔ تازه بلافاصله فعال است. اگر نه، پس از اجرای بعدی برنامه فعال می‌شود. تا آن موقع، جفت‌سازی تازه هنوز شناسهٔ قدیمی را نشان می‌دهد.</p>
+  </section>
+
+  <section id="scanner-side">
+    <p class="kicker">جداسازی · پرسش ۱</p>
+    <h2>پلاگین چگونه نمی‌گذارد اسکنر به گوشی دیگری وصل شود؟</h2>
+    <p>اسکنر گوشی‌اش را انتخاب نمی‌کند. گوشی‌ها اتصال را شروع می‌کنند و اسکنر پاسخ می‌دهد. پس پلاگین با سخت‌گیر کردن هر گوشی دربارهٔ اسکنری که سراغش می‌رود، از اسکنر محافظت می‌کند.</p>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg class="dg" viewBox="0 0 860 290" role="img" aria-label="دو گوشی و دو اسکنر. گوشی A در حال جفت‌سازی است و فقط به اسکنر ۱ وصل می‌شود که شناسهٔ گوشی A را اعلام می‌کند. گوشی B در حال اتصال مجدد است و فقط به اسکنر ۲، اسکنر ذخیره‌شده‌اش، وصل می‌شود. هر گوشی اسکنر دیگر را نادیده می‌گیرد.">
+          <defs>
+            <marker id="ag2" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path class="ah-gate" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Phone A (right) -->
+          <rect class="phone" x="650" y="30" width="190" height="230" rx="20"/>
+          <text class="t-name" x="745" y="70" text-anchor="middle">گوشی A</text>
+          <text class="t-sub" x="745" y="94" text-anchor="middle">شناسه: <tspan class="t-id">7F3A0C91</tspan></text>
+          <text class="t-sub" x="745" y="118" text-anchor="middle">وضعیت: جفت‌سازی</text>
+          <text class="t-sub" x="745" y="140" text-anchor="middle">QR با شناسهٔ خودش</text>
+
+          <!-- Phone B (left) -->
+          <rect class="phone" x="20" y="30" width="190" height="230" rx="20"/>
+          <text class="t-name" x="115" y="70" text-anchor="middle">گوشی B</text>
+          <text class="t-sub" x="115" y="94" text-anchor="middle">شناسه: <tspan class="t-id">C21E55B0</tspan></text>
+          <text class="t-sub" x="115" y="118" text-anchor="middle">وضعیت: اتصال مجدد</text>
+          <text class="t-sub" x="115" y="140" text-anchor="middle">ذخیره‌شده: اسکنر ۲</text>
+
+          <!-- Scanners -->
+          <rect class="node" x="345" y="40" width="170" height="74" rx="10"/>
+          <text class="t-name" x="430" y="65" text-anchor="middle">اسکنر ۱</text>
+          <text class="t-sub" x="430" y="85" text-anchor="middle">حالت جفت‌سازی</text>
+          <text class="t-sub" x="430" y="105" text-anchor="middle">اعلام: <tspan class="t-id">7F3A0C91</tspan></text>
+
+          <rect class="node" x="345" y="176" width="170" height="74" rx="10"/>
+          <text class="t-name" x="430" y="201" text-anchor="middle">اسکنر ۲</text>
+          <text class="t-sub" x="430" y="221" text-anchor="middle">حالت عادی</text>
+          <text class="t-sub" x="430" y="241" text-anchor="middle">اعلام: آدرس خودش</text>
+
+          <!-- Phone A edges -->
+          <path class="edge edge-gate" d="M650 77 H517" marker-end="url(#ag2)"/>
+          <text class="t-gate" x="583" y="67" text-anchor="middle">شناسهٔ من ✓</text>
+          <path class="edge edge-no" d="M650 213 H530"/>
+          <line class="cross" x1="528" y1="207" x2="520" y2="219"/>
+          <line class="cross" x1="520" y1="207" x2="528" y2="219"/>
+          <text class="t-edge" x="588" y="203" text-anchor="middle">شناسهٔ من نیست</text>
+
+          <!-- Phone B edges -->
+          <path class="edge edge-no" d="M210 77 H330"/>
+          <line class="cross" x1="340" y1="71" x2="332" y2="83"/>
+          <line class="cross" x1="332" y1="71" x2="340" y2="83"/>
+          <text class="t-edge" x="272" y="67" text-anchor="middle">ذخیره نشده</text>
+          <path class="edge edge-gate" d="M210 213 H343" marker-end="url(#ag2)"/>
+          <text class="t-gate" x="277" y="203" text-anchor="middle">ذخیره‌شده ✓</text>
+        </svg>
+      </div>
+      <figcaption>هر گوشی، بسته به وضعیتش، یک آزمون اجرا می‌کند. گوشیِ در حال جفت‌سازی می‌پرسد «آیا این اسکنر شناسهٔ من را دارد؟». گوشیِ در حال اتصال مجدد می‌پرسد «آیا این اسکنر ذخیره‌شدهٔ من است؟». اسکنری که در آزمون رد شود نادیده گرفته می‌شود، پس هیچ گوشی سراغ اسکنر گوشی دیگر نمی‌رود، حتی وقتی هر دو کنار هم باشند.</figcaption>
+    </figure>
+
+    <ul class="checks">
+      <li><span class="tag tag-guard">محافظ</span><div><b>کد QR مال یک گوشی است.</b> اسکنر فقط شناسهٔ گوشی‌ای را اعلام می‌کند که کد QR آن را خوانده است. گوشی‌های دیگری که همان لحظه در حال جفت‌سازی‌اند، این شناسه را نادیده می‌گیرند.</div></li>
+      <li><span class="tag tag-guard">محافظ</span><div><b>قاعدهٔ «نزدیک‌ترین اسکنر» وجود ندارد.</b> گوشی هرگز به این دلیل که اسکنری نزدیک است یا سیگنال قوی دارد به آن وصل نمی‌شود. نسخه‌های iOS تا <span class="ltr">0.0.13</span> این کار را می‌کردند (هر اسکنری که نامش با «BLE» تمام می‌شد). نسخهٔ <span class="ltr">1.0.0</span> آن را حذف کرد.</div></li>
+      <li><span class="tag tag-guard">محافظ</span><div><b>اتصال مجدد شخصی است.</b> گوشی فقط به اسکنر ذخیره‌شدهٔ خودش دوباره وصل می‌شود. گوشی همسایه اسکنر ذخیره‌شدهٔ دیگری دارد، پس هرگز سراغ اسکنر شما نمی‌رود.</div></li>
+      <li><span class="tag tag-guard">محافظ</span><div><b>جفت‌سازی یک کار فیزیکی می‌خواهد.</b> اسکنر باید کدی را روی صفحهٔ همان گوشی بخواند، آن هم وقتی گوشی در حالت جفت‌سازی است.</div></li>
+      <li><span class="tag tag-guard">محافظ</span><div><b>هر گوشی، یک اسکنر ذخیره‌شده.</b> وقتی گوشی اسکنر تازه‌ای را جفت می‌کند، رکورد قبلی را فراموش می‌کند و دیگر سراغ اسکنر قبلی نمی‌رود.</div></li>
+      <li><span class="tag tag-gap">ضعف</span><div><b>پس‌گرفتن.</b> اسکنر ۱ با خواندن کد QR گوشی A، از گوشی B به گوشی A می‌رود. گوشی B هنوز اسکنر ۱ را ذخیره دارد و به تلاش برای اتصال مجدد ادامه می‌دهد. وقتی اسکنر ۱ آزاد است (در خواب یا خارج از برد)، ممکن است گوشی B زودتر به آن برسد. برای جلوگیری، هنگام تحویل، اسکنر را در گوشی B فراموش کنید، یا در iOS از حالت سخت‌گیرانه استفاده کنید.</div></li>
+      <li><span class="tag tag-gap">ضعف</span><div><b>نرم‌افزارهای دیگر.</b> این قواعد فقط برای گوشی‌هایی برقرارند که همین نسخهٔ پلاگین را اجرا می‌کنند. یک برنامهٔ عمومی بلوتوث، برنامهٔ خود سازنده، یا نسخهٔ قدیمی‌تر پلاگین می‌تواند به هر اسکنر آزادی وصل شود.</div></li>
+    </ul>
+  </section>
+
+  <section id="phone-side">
+    <p class="kicker">جداسازی · پرسش ۲</p>
+    <h2>پلاگین چگونه نمی‌گذارد گوشی به اسکنر دیگری وصل شود؟</h2>
+    <p>گوشی هر اسکنری را غریبه می‌داند، مگر اینکه در یکی از دو آزمون قبول شود: در جفت‌سازی شناسهٔ گوشی را داشته باشد، یا در اتصال مجدد همان اسکنر ذخیره‌شده باشد. بقیه نادیده گرفته یا بسته می‌شوند.</p>
+
+    <ul class="checks">
+      <li><span class="tag tag-guard">محافظ</span><div><b>جفت‌سازی فقط شناسهٔ همین گوشی را می‌پذیرد.</b> اعلام‌هایی با شناسهٔ دیگر یا بدون شناسه، نامزد نیستند.</div></li>
+      <li><span class="tag tag-guard">محافظ</span><div><b>پنجرهٔ جفت‌سازی کوتاه است.</b> گوشی فقط در حالت جفت‌سازی گوش می‌دهد. در iOS این پنجره به‌طور پیش‌فرض پس از ۶۰ ثانیه بسته می‌شود. برنامه باید هنگام بسته شدن صفحهٔ جفت‌سازی، جفت‌سازی را لغو کند. بیرون از این پنجره، گوشی همهٔ اعلام‌های شناسه را نادیده می‌گیرد.</div></li>
+      <li><span class="tag tag-guard">محافظ</span><div><b>انتخاب روشن وقتی دو اسکنر یک کد را بخوانند.</b> در iOS، پس از یک پنجرهٔ جمع‌آوری ۱٫۵ ثانیه‌ای، اسکنر ذخیره‌شده برنده است، وگرنه قوی‌ترین سیگنال.</div></li>
+      <li><span class="tag tag-guard">محافظ</span><div><b>اتصال مجدد فقط به اسکنر ذخیره‌شده.</b> اندروید آدرس ذخیره‌شده را تطبیق می‌دهد. iOS شناسهٔ سیستمی ذخیره‌شده، یا آدرس ذخیره‌شده در اعلام اسکنر را تطبیق می‌دهد.</div></li>
+      <li><span class="tag tag-guard">محافظ</span><div><b>قفل مالکیت.</b> در iOS، گوشی وقتی بیکار یا متصل است اصلاً جست‌وجو نمی‌کند و هرچه بشنود نادیده می‌گیرد. هر اتصالی که انتخاب جفت‌سازی، هدف اتصال مجدد یا مالک نباشد بلافاصله بسته می‌شود. اسکنر دوم نمی‌تواند جای مالک را بگیرد، مگر اینکه اپراتور آن را جفت کند.</div></li>
+      <li><span class="tag tag-guard">محافظ</span><div><b>داده فقط از مالک.</b> در هر دو پلتفرم، دادهٔ هر اتصال دیگری دور ریخته می‌شود. در اندروید، اسکنری که ناگهان متصل ظاهر شود فقط وقتی پذیرفته می‌شود که اسکنر ذخیره‌شده باشد و جفت‌سازی در جریان نباشد. اتصال مجددی که پس از لغو کامل شود، دوباره بسته می‌شود.</div></li>
+      <li><span class="tag tag-guard">محافظ</span><div><b>فراموش کردن، کدهای قدیمی را بی‌اثر می‌کند.</b> شناسهٔ تازه یعنی اسکنری که کد QR قدیمیِ چاپی یا عکس‌گرفته‌شده را بخواند، دیگر هرگز جور نمی‌شود.</div></li>
+      <li><span class="tag tag-gap">ضعف</span><div><b>شناسه راز نیست.</b> روی صفحه نمایش داده می‌شود، بدون رمزگذاری در هوا فرستاده می‌شود و فقط ۴ بایت است. جلوی اشتباه را می‌گیرد، نه حمله را. کسی که آن را کپی کند می‌تواند دستگاهی بسازد که وقتی گوشی در حال جفت‌سازی است، همان را اعلام کند.</div></li>
+      <li><span class="tag tag-gap">ضعف</span><div><b>یک کد، دو اسکنر.</b> اگر در iOS دو اسکنر یک کد QR را در همان ۱٫۵ ثانیه بخوانند، قدرت سیگنال تصمیم می‌گیرد. در اندروید، کتابخانهٔ سازنده تصمیم می‌گیرد.</div></li>
+      <li><span class="tag tag-gap">ضعف</span><div><b>تغییر دیرهنگام شناسه در اندروید.</b> اگر نسخهٔ حافظهٔ شناسه عوض نشود، شناسهٔ قدیمی تا اجرای بعدی برنامه فعال می‌ماند (بخش <a href="#forget-android">فراموش کردن اسکنر در اندروید</a> را ببینید).</div></li>
+    </ul>
+  </section>
+
+  <section id="platforms">
+    <p class="kicker">مرجع</p>
+    <h2>اندروید و iOS کنار هم</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">موضوع</th><th scope="col">اندروید</th><th scope="col">iOS</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">چه کسی شناسهٔ گوشی را می‌سازد</th><td>کتابخانهٔ سازنده، یک بار برای هر نصب</td><td>پلاگین، ۴ بایت تصادفی</td></tr>
+          <tr><th scope="row">اسکنر ذخیره‌شده</th><td>آدرس بلوتوث</td><td>شناسهٔ سیستمی iOS و آدرس بلوتوث</td></tr>
+          <tr><th scope="row">محدودیت زمانی جفت‌سازی</th><td>در پلاگین ندارد</td><td>پیش‌فرض ۶۰ ثانیه</td></tr>
+          <tr><th scope="row">اسکنر متصل هنگام جفت‌سازی</th><td>با شروع جفت‌سازی قطع می‌شود</td><td>می‌ماند تا اسکنر دیگری وصل شود</td></tr>
+          <tr><th scope="row">دو اسکنر یک کد را بخوانند</th><td>کتابخانهٔ سازنده انتخاب می‌کند</td><td>اسکنر ذخیره‌شده، وگرنه قوی‌ترین سیگنال</td></tr>
+          <tr><th scope="row">روش اتصال مجدد</th><td>اتصال مستقیم به آدرس ذخیره‌شده</td><td>درخواست دائمی، سپس جست‌وجو با آدرس</td></tr>
+          <tr><th scope="row">اتصال مجدد در پس‌زمینه</th><td>تا وقتی برنامه اجرا می‌شود</td><td>فقط درخواست دائمی؛ جست‌وجو به پیش‌زمینه نیاز دارد</td></tr>
+          <tr><th scope="row">حالت سخت‌گیرانه</th><td>ندارد</td><td>اختیاری</td></tr>
+          <tr><th scope="row">شناسهٔ تازه پس از فراموش کردن</th><td>در صورت امکان بلافاصله، وگرنه پس از اجرای بعدی</td><td>بلافاصله</td></tr>
+          <tr><th scope="row">اطلاعات اضافه برای برنامه</th><td>مراحل پیشرفت جفت‌سازی</td><td>پیام‌های عیب‌یابی (لاگ)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>زمان‌بندی‌ها</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">چه</th><th scope="col">اندروید</th><th scope="col">iOS</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">مدت شنیدن در جفت‌سازی</th><td class="num">بدون محدودیت</td><td class="num">۶۰ ثانیه</td></tr>
+          <tr><th scope="row">جمع‌آوری نامزدها پیش از انتخاب</th><td class="num">—</td><td class="num">۱٫۵ ثانیه</td></tr>
+          <tr><th scope="row">مهلت اتصال به اسکنر انتخاب‌شده</th><td class="num">—</td><td class="num">۱۰ ثانیه</td></tr>
+          <tr><th scope="row">پاسخ به درخواست اتصال مجدد (پیش‌فرض)</th><td class="num">۵ ثانیه</td><td class="num">۵ ثانیه</td></tr>
+          <tr><th scope="row">اولین تلاش پس از قطع ناخواسته</th><td class="num">۱ ثانیه</td><td class="num">بلافاصله</td></tr>
+          <tr><th scope="row">تلاش دوباره پس از تلاش ناموفق</th><td class="num">۵ ثانیه</td><td class="num">۲ ثانیه</td></tr>
+          <tr><th scope="row">شروع دوبارهٔ جست‌وجو</th><td class="num">—</td><td class="num">۳۰ ثانیه</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="open">
+    <p class="kicker">گام بعد</p>
+    <h2>موارد باز</h2>
+    <ul class="checks">
+      <li><span class="tag tag-gap">بررسی</span><div><b>تطبیق آدرس را روی دستگاه تأیید کنید.</b> اتصال مجدد در iOS به این بستگی دارد که آدرسی که اسکنر گزارش می‌کند، همان آدرس داخل اعلامش باشد. لاگ‌های iPad این را نشان می‌دهند، اما هنوز تأیید نشده است.</div></li>
+      <li><span class="tag tag-gap">تصمیم</span><div><b>سیاست تحویل.</b> راه بستن ضعف «پس‌گرفتن» را انتخاب کنید: در هر تحویل، اسکنر را در گوشی قبلی فراموش کنید، یا در iOS از حالت سخت‌گیرانه استفاده کنید و بپذیرید که پس از هر قطع اتصال، کد QR دوباره خوانده شود.</div></li>
+      <li><span class="tag tag-gap">تصمیم</span><div><b>محدودیت زمانی جفت‌سازی در اندروید.</b> iOS پنجرهٔ جفت‌سازی را پس از ۶۰ ثانیه می‌بندد. اندروید به کتابخانهٔ سازنده و لغو جفت‌سازی از سوی برنامه وابسته است.</div></li>
+    </ul>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">این گزارش رفتار پلاگین را در اندروید و iOS تا نسخهٔ <span class="ltr">1.0.0</span> (شاخهٔ <span class="ltr">fix/long_qr</span>)، ۱۹ نوامبر ۲۰۲۶، توضیح می‌دهد. جزئیات اسکنر از کتابخانهٔ اندرویدی سازنده و لاگ‌های بلوتوث iPad آمده است.</div>
+</footer>
+
+</body>
+</html>

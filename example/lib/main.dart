@@ -1,357 +1,121 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
-import 'dart:async';
 
-import 'package:flutter/services.dart';
-import 'package:zebra_handheld_scanner/zebra_handheld_scanner.dart';
+import 'pages/builders_page.dart';
+import 'pages/connection_page.dart';
+import 'pages/console_page.dart';
+import 'pages/settings_page.dart';
+import 'scanner_controller.dart';
 
 void main() {
-  runApp(const MaterialApp(home: MyApp()));
+  runApp(const ScannerDemoApp());
 }
 
-class MyApp extends StatefulWidget {
-  const MyApp({super.key});
+class ScannerDemoApp extends StatefulWidget {
+  const ScannerDemoApp({super.key});
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  State<ScannerDemoApp> createState() => _ScannerDemoAppState();
 }
 
-class _MyAppState extends State<MyApp> {
-  String _platformVersion = 'Unknown';
-  final _zebraScannerPlugin = ZebraHandheldScanner();
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _specCodeController = TextEditingController();
-
-  bool _isConnected = false;
-  String _qrCodeContent = '';
-  final List<String> _scannedBarcodes = [];
-
-  String _deviceName = "Unknown";
-  String _deviceVersion = "Unknown";
-  int _batteryLevel = 0;
+class _ScannerDemoAppState extends State<ScannerDemoApp> {
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+  late final ScannerController _controller = ScannerController(
+    messengerKey: _messengerKey,
+  );
 
   @override
   void initState() {
     super.initState();
-    _requestPermissions();
-    initPlatformState();
-
-    _zebraScannerPlugin.setListeners(
-      onScannerConnected: (connected) {
-        if (!mounted) return;
-        setState(() {
-          _isConnected = connected;
-          if (connected) {
-            _qrCodeContent = '';
-            _fetchDeviceInfo();
-          } else {
-            _deviceName = "Unknown";
-            _deviceVersion = "Unknown";
-            _batteryLevel = 0;
-          }
-        });
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(connected ? 'Scanner Auto-Connected!' : 'Scanner connection ended.')));
-      },
-      onScannerAutoConnectStep: (step) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Auto-connect step: $step')));
-      },
-      onBarcodeScanned: (barcode) {
-        if (!mounted) return;
-        setState(() {
-          _scannedBarcodes.insert(0, barcode);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Scanned: $barcode')));
-      },
-    );
-  }
-
-  Future<void> _fetchDeviceInfo() async {
-    try {
-      final name = await _zebraScannerPlugin.getDeviceName();
-      final version = await _zebraScannerPlugin.getVersion();
-      final battery = await _zebraScannerPlugin.getBatteryLevel();
-      if (!mounted) return;
-      setState(() {
-        _deviceName = name ?? "Unknown";
-        _deviceVersion = version ?? "Unknown";
-        _batteryLevel = battery ?? 0;
-      });
-    } on PlatformException catch (e) {
-      if (kDebugMode) print("Failed to get info: $e");
-    }
-  }
-
-  Future<void> _requestPermissions() async {
-    final granted = await _zebraScannerPlugin.requestPermissions();
-    if (!mounted) return;
-    if (!granted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Warning: Bluetooth/Location permissions not fully granted.')));
-    } else {
-      _connectToLastDevice();
-    }
-  }
-
-  Future<void> _connectToLastDevice() async {
-    try {
-      final success = await _zebraScannerPlugin.connectToLastDevice();
-      if (success) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reconnected to last device!')));
-      }
-    } on PlatformException catch (e) {
-      if (kDebugMode) print("Failed to connect to last device: $e");
-    }
-  }
-
-  Future<void> initPlatformState() async {
-    String platformVersion;
-    try {
-      platformVersion = await _zebraScannerPlugin.getPlatformVersion() ?? 'Unknown platform version';
-    } on PlatformException {
-      platformVersion = 'Failed to get platform version.';
-    }
-
-    if (!mounted) return;
-
-    setState(() {
-      _platformVersion = platformVersion;
-    });
-  }
-
-  Future<void> _autoConnectBle() async {
-    try {
-      final qrCode = await _zebraScannerPlugin.autoConnectBle();
-      if (!mounted) return;
-      setState(() {
-        _qrCodeContent = qrCode;
-      });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Waiting for scanner to connect via BLE...')));
-    } on PlatformException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error initiating auto-connect: ${e.message}')));
-    }
-  }
-
-  Future<void> _disconnect() async {
-    try {
-      await _zebraScannerPlugin.disconnect();
-      if (!mounted) return;
-      setState(() {
-        _isConnected = false;
-        _deviceName = "Unknown";
-        _deviceVersion = "Unknown";
-        _batteryLevel = 0;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Disconnected')));
-    } on PlatformException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.message}')));
-    }
-  }
-
-  Future<void> _setDeviceName() async {
-    if (_nameController.text.trim().isEmpty) return;
-    try {
-      await _zebraScannerPlugin.setDeviceName(_nameController.text.trim());
-      await Future.delayed(const Duration(milliseconds: 500));
-      await _fetchDeviceInfo();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Device name updated!')));
-    } on PlatformException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.message}')));
-    }
-  }
-
-  Future<void> _testBuzzer(BuzzerType type) async {
-    try {
-      await _zebraScannerPlugin.setBuzzer(type);
-    } on PlatformException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.message}')));
-    }
-  }
-
-  Future<void> _testVibrator() async {
-    try {
-      await _zebraScannerPlugin.setVibrator(VibratorType.short);
-    } on PlatformException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.message}')));
-    }
-  }
-
-  Future<void> _testLed() async {
-    try {
-      await _zebraScannerPlugin.setLed(LedColor.redAndGreen, durationMs: 500, blinkCount: 2);
-    } on PlatformException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.message}')));
-    }
-  }
-
-  Future<void> _sendSpecCode() async {
-    if (_specCodeController.text.trim().isEmpty) return;
-    try {
-      await _zebraScannerPlugin.sendSpecCode(_specCodeController.text.trim());
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Spec Code Sent!')));
-    } on PlatformException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.message}')));
-    }
+    _controller.init();
   }
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _specCodeController.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Zebra Scanner Demo',
+      scaffoldMessengerKey: _messengerKey,
+      theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
+      darkTheme: ThemeData(
+        colorSchemeSeed: Colors.indigo,
+        brightness: Brightness.dark,
+        useMaterial3: true,
+      ),
+      home: HomePage(controller: _controller),
+    );
+  }
+}
+
+class HomePage extends StatefulWidget {
+  const HomePage({super.key, required this.controller});
+
+  final ScannerController controller;
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  int _index = 0;
+
+  static const _titles = [
+    'Connect',
+    'Settings',
+    'Builders',
+    'Console',
+    'Scans',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.controller;
+    final pages = [
+      ConnectionPage(controller: c),
+      SettingsPage(controller: c),
+      BuildersPage(controller: c),
+      ConsolePage(controller: c),
+      ScansPage(controller: c),
+    ];
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Zebra Scanner Demo')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Status: ${_isConnected ? "Connected" : "Disconnected"}',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                  color: _isConnected ? Colors.green : Colors.red,
+      appBar: AppBar(
+        title: Text('Zebra Scanner · ${_titles[_index]}'),
+        actions: [
+          ListenableBuilder(
+            listenable: c,
+            builder: (context, _) => Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Chip(
+                avatar: Icon(
+                  c.isConnected ? Icons.bluetooth_connected : Icons.bluetooth,
+                  size: 18,
+                  color: c.isConnected ? Colors.green : null,
                 ),
+                label: Text(c.state.name),
               ),
-              if (_isConnected)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Text(
-                    'Name: $_deviceName | Version: $_deviceVersion | Battery: $_batteryLevel%',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontWeight: FontWeight.w500),
-                  ),
-                ),
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  ElevatedButton(onPressed: _autoConnectBle, child: const Text('Auto Connect BLE')),
-                  ElevatedButton(
-                    onPressed: _isConnected ? _disconnect : null,
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-                    child: const Text('Disconnect', style: TextStyle(color: Colors.white)),
-                  ),
-                ],
-              ),
-              if (_isConnected) ElevatedButton(onPressed: _fetchDeviceInfo, child: const Text('Fetch Device Info')),
-              if (_qrCodeContent.isNotEmpty) ...[
-                const SizedBox(height: 15),
-                const Text('Scan this QR Code to connect:', style: TextStyle(fontWeight: FontWeight.bold)),
-                SelectableText(_qrCodeContent, style: const TextStyle(color: Colors.blue)),
-              ],
-
-              if (_isConnected) ...[
-                const Divider(height: 30),
-                const Text('Hardware Feedback Tests', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 10),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    spacing: 12,
-                    children: [
-                      ElevatedButton(onPressed: _testVibrator, child: const Text('Vibrator (Short)')),
-                      ElevatedButton(onPressed: _testLed, child: const Text('LED (Red+Green)')),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                const Text('Buzzer Tests', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: BuzzerType.values.map((type) {
-                    return ElevatedButton(
-                      onPressed: () => _testBuzzer(type),
-                      child: Text(type.name),
-                    );
-                  }).toList(),
-                ),
-              ],
-
-              const Divider(height: 30),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _nameController,
-                      enabled: _isConnected,
-                      decoration: const InputDecoration(
-                        labelText: 'New Device Name',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  ElevatedButton(onPressed: _isConnected ? _setDeviceName : null, child: const Text('Set Name')),
-                ],
-              ),
-              const SizedBox(height: 15),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _specCodeController,
-                      enabled: _isConnected,
-                      decoration: const InputDecoration(
-                        labelText: 'Spec Code (e.g. HighVolume)',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  ElevatedButton(onPressed: _isConnected ? _sendSpecCode : null, child: const Text('Set SpecCode')),
-                ],
-              ),
-
-              const Divider(height: 30),
-              const Text('Scanned Barcodes', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 10),
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _scannedBarcodes.length,
-                itemBuilder: (context, index) {
-                  return Card(
-                    child: ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.qr_code_scanner),
-                      title: Text(_scannedBarcodes[index]),
-                    ),
-                  );
-                },
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
+      ),
+      body: IndexedStack(index: _index, children: pages),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _index,
+        onDestinationSelected: (i) => setState(() => _index = i),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.bluetooth), label: 'Connect'),
+          NavigationDestination(icon: Icon(Icons.tune), label: 'Settings'),
+          NavigationDestination(icon: Icon(Icons.build), label: 'Builders'),
+          NavigationDestination(icon: Icon(Icons.terminal), label: 'Console'),
+          NavigationDestination(
+            icon: Icon(Icons.qr_code_scanner),
+            label: 'Scans',
+          ),
+        ],
       ),
     );
   }

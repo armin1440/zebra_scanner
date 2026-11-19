@@ -22,10 +22,15 @@ import io.flutter.plugin.common.PluginRegistry
 import com.lwtek.scanner.auto.ScannerAutoService
 import com.lwtek.scanner.ble.ScannerBleDevice
 import com.lwtek.scanner.core.ScannerDevice
+import java.io.File
+import java.lang.reflect.Modifier
+import java.util.Locale
+import java.util.UUID
 
 /** ZebraScannerPlugin */
 class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, PluginRegistry.RequestPermissionsResultListener {
     private lateinit var channel: MethodChannel
+    private var appContext: Context? = null
     private var connectedDevice: ScannerDevice? = null
 
     private var activity: Activity? = null
@@ -34,9 +39,19 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
     private var lastBleQrCode: String? = null
     private var isAutoConnectBleRunning = false
 
+    // Connection state
+    private var isPairing = false
+    /** MAC address of the saved scanner while the plugin tries to reconnect to it. */
+    private var reconnectMac: String? = null
+    private var reconnectAttemptInFlight = false
+    private var lastEmittedState: String? = null
+    private val pendingConnectResults = mutableMapOf<Int, Result>()
+    private var nextPendingResultId = 0
+    private val reconnectRunnable = Runnable { attemptReconnect() }
+
     private val barcodeBuffer = StringBuilder()
     private val mainHandler = Handler(Looper.getMainLooper())
-    
+
     private var isCoolingDown = false
     private val cooldownRunnable = Runnable { isCoolingDown = false }
 
@@ -44,7 +59,20 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         dispatchAccumulatedBarcode()
     }
 
+    companion object {
+        private const val TAG = "BLE_AUTO"
+        private const val PREFS_NAME = "ZebraScannerPrefs"
+        private const val PREF_LAST_MAC = "last_device_mac"
+        /** File where the vendor SDK keeps the pairing id of this installation. */
+        private const val SDK_ID_FILE = "LW_AUTO_INSTALLATION"
+        /** Obfuscated vendor SDK class that caches the pairing id. */
+        private const val SDK_ID_HOLDER_CLASS = "lwautoif.lwautonew"
+        private const val RECONNECT_RETRY_MS = 5000L
+        private const val RECONNECT_AFTER_DROP_MS = 1000L
+    }
+
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
+        appContext = flutterPluginBinding.applicationContext
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "zebra_handheld_scanner")
         channel.setMethodCallHandler(this)
     }
@@ -75,29 +103,41 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
             "requestPermissions" -> {
                 requestPermissions(result)
             }
-            "autoConnectBle" -> {
-                autoConnectBle(result)
+            "startPairing" -> {
+                startPairing(result)
             }
-            "connectToLastDevice" -> {
-                connectToLastDevice(result)
+            "cancelPairing" -> {
+                cancelPairing()
+                result.success(null)
             }
-            "sendCommand" -> {
-                sendCommand(call, result)
+            "reconnect" -> {
+                reconnect(call, result)
             }
-            "getDeviceName" -> {
-                getDeviceName(result)
+            "getConnectionState" -> {
+                result.success(currentState())
             }
-            "getVersion" -> {
-                getVersion(result)
+            "sendRawCommand" -> {
+                sendRawCommand(call, result)
+            }
+            "getBluetoothName" -> {
+                getBluetoothName(result)
+            }
+            "getFirmwareVersion" -> {
+                getFirmwareVersion(result)
             }
             "getBatteryLevel" -> {
                 getBatteryLevel(result)
             }
-            "setDeviceName" -> {
-                setDeviceName(call, result)
+            "setBluetoothName" -> {
+                setBluetoothName(call, result)
             }
             "disconnect" -> {
-                disconnect(result)
+                disconnectAll(forget = false)
+                result.success(null)
+            }
+            "forgetScanner" -> {
+                disconnectAll(forget = true)
+                result.success(null)
             }
             else -> {
                 result.notImplemented()
@@ -150,11 +190,37 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         return false
     }
 
+    // region Preferences
+
+    private fun prefs() = (activity ?: appContext)
+        ?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
     private fun saveDeviceMac(macAddress: String?) {
         if (macAddress == null) return
-        activity?.getSharedPreferences("ZebraScannerPrefs", android.content.Context.MODE_PRIVATE)
-            ?.edit()?.putString("last_device_mac", macAddress)?.apply()
+        prefs()?.edit()?.putString(PREF_LAST_MAC, macAddress)?.apply()
     }
+
+    private fun savedDeviceMac(): String? = prefs()?.getString(PREF_LAST_MAC, null)
+
+    // endregion
+
+    // region State
+
+    private fun currentState(): String = when {
+        isPairing -> "pairing"
+        connectedDevice != null -> "connected"
+        reconnectMac != null -> "reconnecting"
+        else -> "idle"
+    }
+
+    private fun emitStateIfChanged() {
+        val state = currentState()
+        if (state == lastEmittedState) return
+        lastEmittedState = state
+        channel.invokeMethod("onConnectionStateChanged", state)
+    }
+
+    // endregion
 
     private fun clearConnectionState() {
         connectedDevice = null
@@ -168,10 +234,10 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         mainHandler.removeCallbacks(dispatchBarcodeRunnable)
         val finalBarcode = barcodeBuffer.toString().replace("\r", "").replace("\n", "").trim()
         barcodeBuffer.setLength(0) // Clear the buffer
-        
-        if (finalBarcode.isNotEmpty() && finalBarcode != "\uFFFD") {
+
+        if (finalBarcode.isNotEmpty() && finalBarcode != "�") {
             channel.invokeMethod("onBarcodeScanned", finalBarcode)
-            
+
             // Ignore trailing packets or repeated scans for 1.5 seconds
             isCoolingDown = true
             mainHandler.removeCallbacks(cooldownRunnable)
@@ -179,27 +245,50 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         }
     }
 
+    /** Makes [device] the connected scanner. */
+    private fun adoptDevice(device: ScannerDevice) {
+        connectedDevice = device
+        saveDeviceMac(device.address)
+        reconnectMac = null
+        mainHandler.removeCallbacks(reconnectRunnable)
+        setupDeviceDataListener(device)
+        completePendingConnectResults(true)
+        channel.invokeMethod("onScannerConnected", true)
+        emitStateIfChanged()
+    }
+
+    /**
+     * True if [device] may become the connected scanner without a new pairing:
+     * it must be the saved scanner. A forgotten scanner is never adopted again.
+     */
+    private fun canAdopt(device: ScannerDevice): Boolean {
+        val mac = device.address ?: return false
+        return !isPairing && mac == savedDeviceMac()
+    }
+
     private fun setupDeviceDataListener(device: ScannerDevice) {
         device.onData { _, str ->
-            Handler(Looper.getMainLooper()).post {
+            mainHandler.post {
                 if (str == null) return@post
                 val text = str as? String ?: return@post
-                
+
+                // Data only from the connected scanner.
+                if (connectedDevice != null && connectedDevice !== device) return@post
+
                 val cleanedChunk = text.replace("\r", "").replace("\n", "").trim()
-                
+
                 // Ignore the automatic scan artifact from the scanner
-                if (cleanedChunk.length == 2 && cleanedChunk.startsWith("\uFFFD")) {
+                if (cleanedChunk.length == 2 && cleanedChunk.startsWith("�")) {
                     return@post
                 }
-                if (cleanedChunk == "\uFFFD") {
+                if (cleanedChunk == "�") {
                     return@post
                 }
-                
+
                 // If we receive data, the device is definitely connected
                 if (connectedDevice == null) {
-                    connectedDevice = device
-                    saveDeviceMac(device.address)
-                    channel.invokeMethod("onScannerConnected", true)
+                    if (!canAdopt(device)) return@post
+                    adoptDevice(device)
                 }
 
                 if (isCoolingDown) {
@@ -210,32 +299,42 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
                 barcodeBuffer.append(text)
 
                 mainHandler.removeCallbacks(dispatchBarcodeRunnable)
-                // Use a 250ms debounce window. This is the "silence timeout" between 
-                // BLE packets. 250ms is long enough to keep a single scan together, 
+                // Use a 250ms debounce window. This is the "silence timeout" between
+                // BLE packets. 250ms is long enough to keep a single scan together,
                 // but short enough to fire BEFORE a second physical scan begins.
                 mainHandler.postDelayed(dispatchBarcodeRunnable, 250)
             }
         }
         device.onState(object : ScannerDevice.StateCallback() {
             override fun onConnected() {
-                Handler(Looper.getMainLooper()).post {
-                    connectedDevice = device
-                    saveDeviceMac(device.address)
-                    channel.invokeMethod("onScannerConnected", true)
+                mainHandler.post {
+                    if (connectedDevice == null && canAdopt(device)) {
+                        adoptDevice(device)
+                    }
                 }
             }
 
             override fun onDisconnected() {
-                Handler(Looper.getMainLooper()).post {
+                mainHandler.post {
+                    // A device that was disconnected on purpose or replaced is ignored.
+                    if (connectedDevice !== device) return@post
                     channel.invokeMethod("onScannerConnected", false)
                     clearConnectionState()
+                    // Lost the scanner (distance, sleep): reconnect only to it.
+                    val mac = device.address
+                    if (mac != null && !isPairing) {
+                        reconnectMac = mac
+                        mainHandler.removeCallbacks(reconnectRunnable)
+                        mainHandler.postDelayed(reconnectRunnable, RECONNECT_AFTER_DROP_MS)
+                    }
+                    emitStateIfChanged()
                 }
             }
         })
     }
 
-    private fun autoConnectBle(result: Result) {
-        Log.d("BLE_AUTO", "autoConnectBle() started")
+    private fun startPairing(result: Result) {
+        Log.d(TAG, "startPairing() started")
 
         val currentActivity = activity
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && currentActivity != null) {
@@ -248,7 +347,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
             }
 
             if (!isLocationEnabled) {
-                Log.w("BLE_AUTO", "Location services are disabled, prompting user to enable them")
+                Log.w(TAG, "Location services are disabled, prompting user to enable them")
                 try {
                     currentActivity.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                 } catch (e: Exception) {
@@ -260,158 +359,296 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         }
 
         if (isAutoConnectBleRunning) {
-            Log.w("BLE_AUTO", "autoConnectBle() ignored because a previous call is still running")
+            Log.w(TAG, "startPairing() ignored because a previous call is still running")
 
             // Return cached QR if available
             lastBleQrCode?.let {
-                Log.d("BLE_AUTO", "Returning cached QR code while call is already running")
+                Log.d(TAG, "Returning cached QR code while call is already running")
                 result.success(it)
                 return
             }
 
-            result.error("BUSY", "autoConnectBle is already running", null)
+            result.error("BUSY", "startPairing is already running", null)
             return
         }
 
         isAutoConnectBleRunning = true
 
         try {
-            // Optional: clean previous device state before requesting a new QR
+            // Clean previous device state before requesting a new QR
             connectedDevice?.let { device ->
                 try {
-                    Log.d("BLE_AUTO", "Disconnecting previous connected device before generating QR")
+                    Log.d(TAG, "Disconnecting previous connected device before generating QR")
                     device.onData(null)
                     device.disconnect()
                 } catch (e: Exception) {
-                    Log.e("BLE_AUTO", "Error while disconnecting previous device", e)
+                    Log.e(TAG, "Error while disconnecting previous device", e)
                 } finally {
                     clearConnectionState()
                 }
             }
+            // Pairing replaces the reconnection to the old scanner.
+            stopReconnect()
 
             val qrCode = ScannerAutoService.ble({ success, device ->
-                Log.d("BLE_AUTO", "BLE callback triggered. success=$success device=$device")
+                Log.d(TAG, "BLE callback triggered. success=$success device=$device")
 
-                Handler(Looper.getMainLooper()).post {
-                    Log.d("BLE_AUTO", "Inside main thread handler")
-
+                mainHandler.post {
                     if (success && device != null) {
-                        Log.d("BLE_AUTO", "Device found. Creating ScannerBleDevice")
+                        Log.d(TAG, "Device found. Creating ScannerBleDevice")
 
                         val scanner = ScannerBleDevice.from(device)
 
-                        Log.d("BLE_AUTO", "Attempting to connect to device")
+                        Log.d(TAG, "Attempting to connect to device")
                         scanner.connect { connectSuccess, error ->
-                            Log.d(
-                                "BLE_AUTO",
-                                "Connect callback triggered. success=$connectSuccess error=$error"
-                            )
+                            Log.d(TAG, "Connect callback triggered. success=$connectSuccess error=$error")
 
-                            Handler(Looper.getMainLooper()).post {
+                            mainHandler.post {
+                                isPairing = false
                                 if (connectSuccess) {
-                                    Log.d("BLE_AUTO", "Device connected successfully")
-                                    connectedDevice = scanner
-                                    saveDeviceMac(scanner.address)
-
-                                    Log.d("BLE_AUTO", "Setting up device data listener")
-                                    setupDeviceDataListener(scanner)
-
-                                    Log.d("BLE_AUTO", "Invoking Flutter method onScannerConnected = true")
-                                    channel.invokeMethod("onScannerConnected", true)
+                                    Log.d(TAG, "Device connected successfully")
+                                    adoptDevice(scanner)
                                 } else {
-                                    Log.e("BLE_AUTO", "Device connection FAILED")
+                                    Log.e(TAG, "Device connection FAILED")
                                     channel.invokeMethod("onScannerConnected", false)
+                                    emitStateIfChanged()
                                 }
                             }
                         }
                     } else {
-                        Log.e("BLE_AUTO", "BLE scan failed or device is null")
-                        Handler(Looper.getMainLooper()).post {
-                            channel.invokeMethod("onScannerConnected", false)
-                        }
+                        Log.e(TAG, "BLE scan failed or device is null")
+                        isPairing = false
+                        channel.invokeMethod("onScannerConnected", false)
+                        emitStateIfChanged()
                     }
                 }
             }, { step ->
-                Log.d("BLE_AUTO", "AutoConnect step received: $step")
+                Log.d(TAG, "AutoConnect step received: $step")
 
-                Handler(Looper.getMainLooper()).post {
-                    Log.d("BLE_AUTO", "Sending step to Flutter")
-                    channel.invokeMethod("onScannerAutoConnectStep", step)
+                mainHandler.post {
+                    channel.invokeMethod("onPairingStep", step)
                 }
             })
 
-            Log.d("BLE_AUTO", "ScannerAutoService.ble() returned qrCode = $qrCode")
+            Log.d(TAG, "ScannerAutoService.ble() returned qrCode = $qrCode")
 
             if (!qrCode.isNullOrBlank()) {
-                Log.d("BLE_AUTO", "QR Code generated successfully")
+                Log.d(TAG, "QR Code generated successfully")
                 lastBleQrCode = qrCode
+                isPairing = true
                 result.success(qrCode)
             } else if (!lastBleQrCode.isNullOrBlank()) {
-                Log.w("BLE_AUTO", "SDK returned null QR. Returning cached QR code instead")
+                Log.w(TAG, "SDK returned null QR. Returning cached QR code instead")
+                isPairing = true
                 result.success(lastBleQrCode)
             } else {
-                Log.e("BLE_AUTO", "QR_ERROR: SDK returned null and no cached QR code exists")
+                Log.e(TAG, "QR_ERROR: SDK returned null and no cached QR code exists")
                 result.error("QR_ERROR", "Failed to generate BLE auto-connect QR code", null)
             }
         } catch (e: Exception) {
-            Log.e("BLE_AUTO", "Exception inside autoConnectBle()", e)
+            Log.e(TAG, "Exception inside startPairing()", e)
 
             if (!lastBleQrCode.isNullOrBlank()) {
-                Log.w("BLE_AUTO", "Returning cached QR code after exception")
+                Log.w(TAG, "Returning cached QR code after exception")
+                isPairing = true
                 result.success(lastBleQrCode)
             } else {
                 result.error("QR_ERROR", e.message ?: "Unknown BLE auto connect error", null)
             }
         } finally {
             isAutoConnectBleRunning = false
+            emitStateIfChanged()
         }
     }
 
-    private fun connectToLastDevice(result: Result) {
-        val currentActivity = activity
-        if (currentActivity == null) {
-            result.error("NO_ACTIVITY", "Activity is not attached", null)
-            return
+    private fun cancelPairing() {
+        if (!isPairing) return
+        try {
+            ScannerAutoService.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error while stopping auto connect", e)
         }
+        isPairing = false
+        emitStateIfChanged()
+    }
 
-        val prefs = currentActivity.getSharedPreferences("ZebraScannerPrefs", android.content.Context.MODE_PRIVATE)
-        val macAddress = prefs.getString("last_device_mac", null)
+    // region Reconnection
 
+    private fun reconnect(call: MethodCall, result: Result) {
+        val timeoutMs = call.argument<Int>("timeoutMs") ?: 5000
+        // "requireToken" is not used on Android: the vendor SDK clears the pairing
+        // id on the scanner after pairing (%%SpecCodeBA4400|AC).
+
+        val macAddress = savedDeviceMac()
         if (macAddress == null) {
             result.success(false)
             return
         }
 
+        val current = connectedDevice
+        if (current != null && current.address == macAddress) {
+            result.success(true)
+            return
+        }
+
+        val bluetoothAdapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
+            result.success(false)
+            return
+        }
+
+        reconnectMac = macAddress
+        addPendingConnectResult(result, timeoutMs)
+        // Only one connection attempt at a time. Repeated calls wait for it.
+        if (!reconnectAttemptInFlight) {
+            mainHandler.removeCallbacks(reconnectRunnable)
+            attemptReconnect()
+        }
+        emitStateIfChanged()
+    }
+
+    private fun attemptReconnect() {
+        val mac = reconnectMac ?: return
+        if (connectedDevice != null || reconnectAttemptInFlight) return
+
+        val bluetoothAdapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
+            mainHandler.postDelayed(reconnectRunnable, RECONNECT_RETRY_MS)
+            return
+        }
+
         try {
-            val bluetoothAdapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
-            if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
-                result.success(false)
-                return
-            }
-
-            val device = bluetoothAdapter.getRemoteDevice(macAddress)
-            val scanner = ScannerBleDevice.from(device) as ScannerDevice
-
+            val scanner = ScannerBleDevice.from(bluetoothAdapter.getRemoteDevice(mac)) as ScannerDevice
+            reconnectAttemptInFlight = true
             scanner.connect { connectSuccess, _ ->
-                Handler(Looper.getMainLooper()).post {
+                mainHandler.post {
+                    reconnectAttemptInFlight = false
+                    if (reconnectMac != mac || connectedDevice != null) {
+                        // Cancelled or replaced while connecting.
+                        if (connectSuccess && connectedDevice !== scanner) {
+                            scanner.onData(null)
+                            scanner.disconnect()
+                        }
+                        return@post
+                    }
                     if (connectSuccess) {
-                        connectedDevice = scanner
-                        saveDeviceMac(scanner.address)
-                        setupDeviceDataListener(scanner)
-                        channel.invokeMethod("onScannerConnected", true)
-                        result.success(true)
+                        adoptDevice(scanner)
                     } else {
-                        result.success(false)
+                        mainHandler.postDelayed(reconnectRunnable, RECONNECT_RETRY_MS)
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e("BLE_AUTO", "Exception connecting to last device", e)
-            result.success(false)
+            Log.e(TAG, "Exception connecting to last device", e)
+            reconnectAttemptInFlight = false
+            mainHandler.postDelayed(reconnectRunnable, RECONNECT_RETRY_MS)
         }
     }
 
-    private fun sendCommand(call: MethodCall, result: Result) {
+    private fun stopReconnect() {
+        reconnectMac = null
+        mainHandler.removeCallbacks(reconnectRunnable)
+        completePendingConnectResults(false)
+    }
+
+    private fun addPendingConnectResult(result: Result, timeoutMs: Int) {
+        val id = nextPendingResultId++
+        pendingConnectResults[id] = result
+        mainHandler.postDelayed({
+            pendingConnectResults.remove(id)?.success(false)
+        }, timeoutMs.toLong().coerceAtLeast(0))
+    }
+
+    private fun completePendingConnectResults(value: Boolean) {
+        val results = pendingConnectResults.values.toList()
+        pendingConnectResults.clear()
+        results.forEach { it.success(value) }
+    }
+
+    // endregion
+
+    // region Disconnect
+
+    private fun disconnectAll(forget: Boolean) {
+        cancelPairing()
+        stopReconnect()
+
+        connectedDevice?.let { device ->
+            connectedDevice = null
+            try {
+                device.onData(null)
+                device.disconnect()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error while disconnecting", e)
+            }
+            clearConnectionState()
+            channel.invokeMethod("onScannerConnected", false)
+        }
+
+        if (forget) {
+            prefs()?.edit()?.remove(PREF_LAST_MAC)?.apply()
+            lastBleQrCode = null
+            try {
+                // The next startPairing() must create a QR code with the new id.
+                ScannerAutoService.stop()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error while stopping auto connect", e)
+            }
+            val immediate = rotateSdkPairingId()
+            Log.d(TAG, "Pairing id rotated. Effective immediately: $immediate")
+        }
+
+        emitStateIfChanged()
+    }
+
+    /**
+     * Gives this installation a new pairing id, so scanners that read the old
+     * QR code never match again.
+     *
+     * The vendor SDK stores the id in [SDK_ID_FILE] and caches it in a lazy
+     * value. The file is always rewritten. The cached value is replaced by
+     * reflection when possible. Returns true if the new id is used now, false
+     * if it is used after the next app start.
+     */
+    private fun rotateSdkPairingId(): Boolean {
+        val context = appContext ?: activity?.applicationContext ?: return false
+        val newUuid = UUID.randomUUID().toString()
+        try {
+            File(context.filesDir, SDK_ID_FILE).writeText(newUuid, Charsets.UTF_8)
+        } catch (e: Exception) {
+            Log.e(TAG, "Cannot write the SDK pairing id file", e)
+            return false
+        }
+        val newId = newUuid.take(8).uppercase(Locale.ROOT)
+
+        return try {
+            val holder = Class.forName(SDK_ID_HOLDER_CLASS)
+            for (field in holder.declaredFields) {
+                if (!Modifier.isStatic(field.modifiers) || !Lazy::class.java.isAssignableFrom(field.type)) continue
+                field.isAccessible = true
+                val lazy = field.get(null) as? Lazy<*> ?: continue
+                // Not read yet: the SDK reads the new file on first use.
+                if (!lazy.isInitialized()) return true
+                val oldValue = lazy.value
+                for (valueField in lazy.javaClass.declaredFields) {
+                    if (Modifier.isStatic(valueField.modifiers)) continue
+                    valueField.isAccessible = true
+                    if (valueField.get(lazy) === oldValue) {
+                        valueField.set(lazy, newId)
+                        return lazy.value == newId
+                    }
+                }
+            }
+            false
+        } catch (e: Throwable) {
+            Log.w(TAG, "Cannot replace the cached SDK pairing id. It changes after the next app start.", e)
+            false
+        }
+    }
+
+    // endregion
+
+    private fun sendRawCommand(call: MethodCall, result: Result) {
         val command = call.argument<String>("command")
         val device = connectedDevice
         if (command != null && device != null) {
@@ -431,11 +668,11 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         }
     }
 
-    private fun getDeviceName(result: Result) {
+    private fun getBluetoothName(result: Result) {
         val device = connectedDevice
         if (device != null) {
             device.getDeviceName { data, error ->
-                Handler(Looper.getMainLooper()).post {
+                mainHandler.post {
                     if (data != null) result.success(data.toString())
                     else result.error("ERROR", error?.toString() ?: "Unknown error", null)
                 }
@@ -445,11 +682,11 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         }
     }
 
-    private fun getVersion(result: Result) {
+    private fun getFirmwareVersion(result: Result) {
         val device = connectedDevice
         if (device != null) {
             device.getVersion { data, error ->
-                Handler(Looper.getMainLooper()).post {
+                mainHandler.post {
                     if (data != null) result.success(data.toString())
                     else result.error("ERROR", error?.toString() ?: "Unknown error", null)
                 }
@@ -463,7 +700,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         val device = connectedDevice
         if (device != null) {
             device.getBatteryLevel { data, error ->
-                Handler(Looper.getMainLooper()).post {
+                mainHandler.post {
                     if (data != null) {
                         result.success(data as? Int ?: data.toString().toIntOrNull() ?: 0)
                     } else {
@@ -476,7 +713,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         }
     }
 
-    private fun setDeviceName(call: MethodCall, result: Result) {
+    private fun setBluetoothName(call: MethodCall, result: Result) {
         val name = call.argument<String>("name")
         val device = connectedDevice
         if (device != null && name != null) {
@@ -487,22 +724,14 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         }
     }
 
-    private fun disconnect(result: Result) {
-        val device = connectedDevice
-        if (device != null) {
-            device.onData(null)
-            device.disconnect()
-            clearConnectionState()
-            result.success(null)
-        } else {
-            result.success(null)
-        }
-    }
-
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
+        mainHandler.removeCallbacks(reconnectRunnable)
+        reconnectMac = null
+        pendingConnectResults.clear()
         connectedDevice?.onData(null)
         connectedDevice?.disconnect()
         clearConnectionState()
+        appContext = null
     }
 }

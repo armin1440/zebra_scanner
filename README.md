@@ -12,6 +12,9 @@ This plugin abstracts away the complex underlying native Bluetooth connection lo
 - **Read Device Information**: Fetch connected scanner details such as its Bluetooth Name, Firmware Version, and Battery Level percentage.
 - **Hardware Feedback Control**: Programmatically trigger the scanner's Buzzer, Vibrator, and LED indicator lights with predefined enums.
 - **Configuration Commands**: Send deep setting codes (`SpecCode`) or raw laser commands over Bluetooth directly from your app.
+- **Configuration Catalog**: Every code of the Effon V8 manual as `ScannerSetting`, ready to show as a QR code or send over BLE.
+- **Barcode Builders**: Combined barcodes (`%%SpecCode93|78|AC`), one-scan setup, and single-scan `BA3E` commands (prefix, suffix, GS, hidden characters, Bluetooth name, custom key).
+- **Safe Pairing and Reconnection**: Token-based pairing on iOS and Android, an ownership lock, and reconnection only to the saved scanner.
 
 ## Getting Started
 
@@ -21,7 +24,7 @@ Add `zebra_handheld_scanner` to your `pubspec.yaml` dependencies:
 
 ```yaml
 dependencies:
-  zebra_handheld_scanner: ^0.0.1
+  zebra_handheld_scanner: ^1.0.0
 ```
 
 ### 2. Permissions
@@ -73,8 +76,8 @@ void initState() {
     onBarcodeScanned: (String barcode) {
       print("Scanned Barcode: $barcode");
     },
-    onScannerAutoConnectStep: (int step) {
-      print("Auto-connect step: $step");
+    onPairingStep: (int step) {
+      print("Pairing step: $step");
     },
   );
 }
@@ -82,13 +85,38 @@ void initState() {
 
 ### Connecting to a Scanner
 
-You can either connect to a previously bonded scanner (Android), or initiate an Auto-Connect sequence.
-
-**Auto Connect (BLE):**
+**Pairing (QR4):**
 ```dart
-// Initiates scanning for nearby BLE scanners.
-// It returns instructions or a QR Code text string that needs to be scanned by the physical Zebra scanner to pair.
-String pairingQrText = await _zebraScannerPlugin.autoConnectBle();
+// Returns the pairing QR content (%%SpecCodeBA4403<token>). Show it as a QR code.
+// Only the scanner that reads it connects.
+String pairingQr = await _zebraScannerPlugin.startPairing();
+
+// When the pairing screen closes without a connection:
+await _zebraScannerPlugin.cancelPairing();
+```
+
+On iOS the token is 4 random bytes, kept until `forgetScanner()`. iOS connects only to a scanner that advertises this token.
+
+**Reconnect to the saved scanner:**
+```dart
+// true if connected within the timeout. Otherwise the plugin keeps trying,
+// only with the saved scanner, until disconnect() or forgetScanner().
+bool ok = await _zebraScannerPlugin.reconnect();
+```
+
+**Connection state:**
+```dart
+_zebraScannerPlugin.setListeners(
+  onConnectionStateChanged: (ScannerConnectionState state) {
+    // idle, pairing, reconnecting, connected
+  },
+);
+```
+
+**Disconnect or forget:**
+```dart
+await _zebraScannerPlugin.disconnect();          // keeps the saved scanner
+await _zebraScannerPlugin.forgetScanner();       // new token: old scanners never match again
 ```
 
 ### Reading Device Info
@@ -96,8 +124,8 @@ String pairingQrText = await _zebraScannerPlugin.autoConnectBle();
 Once connected, you can fetch metadata from the Zebra scanner:
 
 ```dart
-String? name = await _zebraScannerPlugin.getDeviceName();
-String? version = await _zebraScannerPlugin.getVersion();
+String? name = await _zebraScannerPlugin.getBluetoothName();
+String? version = await _zebraScannerPlugin.getFirmwareVersion();
 int? battery = await _zebraScannerPlugin.getBatteryLevel(); // Returns 0-100 percentage
 ```
 
@@ -107,25 +135,53 @@ You can control the physical feedback mechanisms of the scanner directly using t
 
 **Buzzer:**
 ```dart
-await _zebraScannerPlugin.setBuzzer(BuzzerType.normalScan); // Emits a low-pitched beep
-await _zebraScannerPlugin.setBuzzer(BuzzerType.errorAlert); // Emits three rapid low-pitched beeps
+await _zebraScannerPlugin.beep(BuzzerSound.normalScan); // Emits a low-pitched beep
+await _zebraScannerPlugin.beep(BuzzerSound.errorAlert); // Emits three rapid low-pitched beeps
 ```
 
 **Vibrator:**
 ```dart
-await _zebraScannerPlugin.setVibrator(VibratorType.short);
+await _zebraScannerPlugin.vibrate(VibrationLength.short);
 ```
 
 **LED:**
 ```dart
 // Flash the Red and Green LED twice, holding for 500ms each time.
-await _zebraScannerPlugin.setLed(LedColor.redAndGreen, durationMs: 500, blinkCount: 2);
+await _zebraScannerPlugin.flashLed(LedColor.redAndGreen, duration: const Duration(milliseconds: 500), blinkCount: 2);
 ```
 
-**Custom Setting Codes:**
+**Configuration codes over BLE:**
 ```dart
-// Send a configuration setting code (e.g. Volume to High)
-await _zebraScannerPlugin.sendSpecCode("HighVolume");
+// One code per BLE command. "97" (High Volume) is sent as BA 05 97.
+await _zebraScannerPlugin.sendSetting(ScannerSetting.highVolume);
+await _zebraScannerPlugin.sendSpecCode('%%SpecCodeBA1C01'); // continuous scan
+
+// Several codes, one after the other.
+await _zebraScannerPlugin.sendSettings([
+  ScannerSetting.disableLongPressHidDiscovery,
+  ScannerSetting.sleep30Minutes,
+]);
+
+// Save the current settings as custom defaults. %%SpecCode93 then restores them.
+await _zebraScannerPlugin.saveAsCustomDefaults();
+```
+
+**Configuration barcodes (scan with the scanner):**
+```dart
+ScannerConfigBarcode.combine(['93', '78', 'AC']);   // %%SpecCode93|78|AC (max 128 bytes)
+ScannerConfigBarcode.initialSetup(pairingCode: qr); // %%SpecCode93|78|AC|BA4403…
+ScannerConfigBarcode.initialSetup(bluetoothName: 'S-07', saveAsCustomDefaults: true);
+                                                    // %%SpecCode93|78|AC|BA3E0504S-07|92
+ScannerConfigBarcode.setPrefix('1234');             // %%SpecCodeBA3E000831323334
+ScannerConfigBarcode.hideLeadingCharacters(8);      // %%SpecCodeBA3E030208
+ScannerConfigBarcode.setBluetoothName('Scanner');   // %%SpecCodeBA3E0507Scanner
+```
+
+**Virtual scan (experimental):**
+```dart
+// The scanner handles the text like a scanned barcode (OP 0x04).
+// The vendor SDK uses this command, but it is not in the vendor documents.
+await _zebraScannerPlugin.sendVirtualScan('%%SpecCode93|78|AC');
 ```
 
 ### Disconnecting
