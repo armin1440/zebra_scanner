@@ -1,0 +1,962 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تشخیص اسکنر در iOS</title>
+<meta name="description" content="گزارش تصویری و گام‌به‌گام: iOS چطور بین اسکنر A و B انتخاب می‌کند، دزدی کانکشن چطور رخ می‌دهد، و مکانیزم جایگزین برای جلوگیری از آن.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f4f6f9; --surface:#ffffff; --surface-2:#eef1f5; --text:#141821; --muted:#5a6475; --border:#dce1e8;
+  --accent:#2563eb; --accent-soft:#e5edff; --ok:#15803d; --ok-soft:#e3f4e8; --warn:#b45309; --warn-soft:#fcefdc;
+  --bad:#c0262d; --bad-soft:#fce6e6; --info:#6d28d9; --info-soft:#eee7fd;
+  --code-bg:#0f1720; --code-text:#e6edf3; --shadow:0 1px 2px rgba(16,24,40,.06),0 6px 20px rgba(16,24,40,.06); --radius:16px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0d1117; --surface:#151b23; --surface-2:#1c2430; --text:#e6edf3; --muted:#9aa5b4; --border:#2a3441;
+    --accent:#6ea0ff; --accent-soft:#18284a; --ok:#4ade80; --ok-soft:#10291a; --warn:#fbbf24; --warn-soft:#2e2310;
+    --bad:#f87171; --bad-soft:#341517; --info:#b69cff; --info-soft:#241a3d;
+    --code-bg:#0a0e14; --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0d1117; --surface:#151b23; --surface-2:#1c2430; --text:#e6edf3; --muted:#9aa5b4; --border:#2a3441;
+  --accent:#6ea0ff; --accent-soft:#18284a; --ok:#4ade80; --ok-soft:#10291a; --warn:#fbbf24; --warn-soft:#2e2310;
+  --bad:#f87171; --bad-soft:#341517; --info:#b69cff; --info-soft:#241a3d;
+  --code-bg:#0a0e14; --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:15.5px/1.9 "Vazirmatn",Tahoma,"Segoe UI",sans-serif}
+a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+code{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--surface-2);border:1px solid var(--border);padding:1px 6px;border-radius:6px;direction:ltr;unicode-bidi:isolate;word-break:break-word}
+pre{direction:ltr;text-align:left;background:var(--code-bg);color:var(--code-text);padding:14px 16px;border-radius:12px;overflow:auto;font:12.8px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin:10px 0}
+pre code{background:none;border:0;padding:0;color:inherit}
+.kw{color:#ff7b72}.ty{color:#79c0ff}.st{color:#a5d6ff}.cm{color:#8b949e;font-style:italic}.fn{color:#d2a8ff}.bad-line{background:rgba(248,81,73,.18);display:inline-block;width:100%}
+.n{direction:ltr;unicode-bidi:isolate;display:inline-block;font-weight:700}
+.wrap{max-width:1180px;margin:0 auto;padding:0 16px}
+header.hero{background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 50%,#0369a1 100%);color:#fff;padding:46px 0 40px}
+.hero h1{margin:0 0 10px;font-size:32px;line-height:1.45;font-weight:800}
+.hero p{margin:0;max-width:820px;opacity:.92;font-size:16px}
+.hero .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.hero .meta span{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);padding:3px 12px;border-radius:999px;font-size:12.5px}
+.layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:26px;margin-top:26px;margin-bottom:60px}
+nav.toc{position:sticky;top:16px;align-self:start;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 10px;box-shadow:var(--shadow);max-height:calc(100vh - 32px);overflow:auto}
+nav.toc b{display:block;font-size:12px;color:var(--muted);padding:2px 10px 8px}
+nav.toc a{display:flex;gap:8px;align-items:center;padding:6px 10px;border-radius:8px;color:var(--text);font-size:14px}
+nav.toc a:hover{background:var(--surface-2);text-decoration:none}
+nav.toc .num{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:800;flex:none}
+section.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:26px 28px;margin-bottom:22px;box-shadow:var(--shadow);scroll-margin-top:16px}
+section.card>h2{margin:0 0 4px;font-size:23px;font-weight:800;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+section.card>.lead{color:var(--muted);margin:0 0 16px}
+h3{font-size:18px;margin:22px 0 8px;font-weight:800}
+h4{font-size:15px;margin:12px 0 6px;font-weight:700}
+ul,ol{padding-right:22px;padding-left:0;margin:8px 0} li{margin:4px 0}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;padding:1px 10px;border-radius:999px;white-space:nowrap;vertical-align:middle}
+.b-ok{background:var(--ok-soft);color:var(--ok)}.b-warn{background:var(--warn-soft);color:var(--warn)}.b-bad{background:var(--bad-soft);color:var(--bad)}.b-info{background:var(--info-soft);color:var(--info)}.b-acc{background:var(--accent-soft);color:var(--accent)}
+.callout{border:1px solid var(--border);border-right:5px solid var(--accent);background:var(--accent-soft);border-radius:12px;padding:12px 18px;margin:14px 0}
+.callout.bad{border-right-color:var(--bad);background:var(--bad-soft)}.callout.ok{border-right-color:var(--ok);background:var(--ok-soft)}.callout.warn{border-right-color:var(--warn);background:var(--warn-soft)}
+.callout p{margin:4px 0}.callout .q{font-weight:800;font-size:16px}
+.answer{font-size:19px;font-weight:800;line-height:1.7;margin:6px 0 10px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.tile{background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:14px 16px}
+.tile h4{margin:0 0 6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.tile p{margin:4px 0}
+/* steps */
+.steps{display:grid;gap:14px;margin:14px 0;counter-reset:st}
+.step{display:grid;grid-template-columns:96px minmax(0,1fr);gap:16px;background:var(--surface-2);border:1px solid var(--border);border-radius:16px;padding:16px;position:relative}
+.step .ic{width:96px;height:96px;border-radius:14px;background:var(--surface);border:1px solid var(--border);display:grid;place-items:center;position:relative}
+.step .ic svg{width:64px;height:64px}
+.step .ic .no{position:absolute;top:-10px;right:-10px;width:30px;height:30px;border-radius:10px;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:800;font-size:15px;box-shadow:var(--shadow)}
+.step h4{margin:0 0 4px;font-size:16px}
+.step p{margin:4px 0}
+.step.bad .ic .no{background:var(--bad)} .step.ok .ic .no{background:var(--ok)} .step.warn .ic .no{background:var(--warn)}
+.where{font-size:12.5px;color:var(--muted)}
+/* pipeline */
+.pipe{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin:14px 0}
+.pipe .p{flex:1 1 150px;background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:12px 12px 10px;position:relative;min-width:150px}
+.pipe .p b{display:block;font-size:12px;color:var(--accent);margin-bottom:2px}
+.pipe .p.ok{border-color:var(--ok)} .pipe .p.ok b{color:var(--ok)}
+.pipe .p.bad{border-color:var(--bad)} .pipe .p.bad b{color:var(--bad)}
+.pipe .arrow{align-self:center;font-size:22px;color:var(--muted);flex:none}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:14px;margin:12px 0;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+th,td{text-align:right;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-size:12.5px;color:var(--muted);font-weight:700}
+tr:last-child td{border-bottom:0}
+.tablewrap{overflow-x:auto}
+.diagram{background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:12px;margin:14px 0;overflow-x:auto}
+.diagram svg{display:block;width:100%;height:auto}
+.diagram.wide svg{min-width:680px}
+.diagram text{fill:var(--text);font-family:"Vazirmatn",Tahoma,sans-serif;font-size:13px}
+.diagram .muted{fill:var(--muted)}
+.diagram .lt{direction:ltr;unicode-bidi:embed;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.diagram .node{fill:var(--surface);stroke:var(--border);stroke-width:1.5}
+.diagram .node.acc{stroke:var(--accent)}.diagram .node.ok{stroke:var(--ok)}.diagram .node.bad{stroke:var(--bad)}.diagram .node.warn{stroke:var(--warn)}
+.diagram .edge{stroke:var(--muted);stroke-width:1.6;fill:none}
+.diagram .edge.bad{stroke:var(--bad)}.diagram .edge.ok{stroke:var(--ok)}.diagram .edge.acc{stroke:var(--accent)}
+.diagram .ah{fill:var(--muted)}.diagram .ah-bad{fill:var(--bad)}.diagram .ah-ok{fill:var(--ok)}.diagram .ah-acc{fill:var(--accent)}
+.diagram .life{stroke:var(--border);stroke-width:2;stroke-dasharray:4 5}
+.diagram .ring{fill:none;stroke:var(--accent);stroke-width:1.5;stroke-dasharray:6 6}
+.diagram .zone{fill:var(--accent-soft);opacity:.55}
+.diagram .dot-ok{fill:var(--ok)}.diagram .dot-bad{fill:var(--bad)}.diagram .dot-warn{fill:var(--warn)}.diagram .dot-mut{fill:var(--muted)}
+.diagram .pill{fill:var(--surface);stroke:var(--border)}
+.diagram .numc{fill:var(--accent)} .diagram .numc.bad{fill:var(--bad)} .diagram .numt{fill:#fff;font-weight:800;font-size:12px}
+.legend{display:grid;gap:6px;margin:8px 0;padding:0;list-style:none;counter-reset:lg}
+.legend li{counter-increment:lg;position:relative;padding-right:36px;margin:0;min-height:28px}
+.legend li::before{content:counter(lg);position:absolute;right:0;top:4px;width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:800;font-size:12px}
+.legend.bad li.x::before{background:var(--bad)}
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.vs .col{border-radius:14px;padding:14px 16px;border:1px solid var(--border)}
+.vs .col.and{background:var(--ok-soft)} .vs .col.ios{background:var(--warn-soft)}
+.rules{list-style:none;padding:0;display:grid;gap:10px;counter-reset:r}
+.rules li{counter-increment:r;display:grid;grid-template-columns:40px 1fr;gap:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin:0}
+.rules li::before{content:"R" counter(r);direction:ltr;display:grid;place-items:center;width:38px;height:30px;border-radius:9px;background:var(--accent);color:#fff;font-weight:800;font-size:13px}
+.rules b{display:block}
+footer{color:var(--muted);font-size:12.5px;text-align:center;padding:10px 16px 40px}
+.theme-toggle{position:fixed;left:16px;bottom:16px;z-index:5;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:999px;padding:7px 14px;font:700 13px "Vazirmatn",Tahoma,sans-serif;cursor:pointer;box-shadow:var(--shadow)}
+@media (max-width:980px){.layout{grid-template-columns:1fr}nav.toc{position:relative;top:0;max-height:none}}
+@media (max-width:640px){
+  .grid2,.vs{grid-template-columns:1fr}
+  section.card{padding:18px 16px}
+  .hero h1{font-size:24px}
+  .step{grid-template-columns:1fr}
+  .pipe .arrow{transform:rotate(-90deg)}
+}
+@media print{nav.toc,.theme-toggle{display:none}.layout{grid-template-columns:1fr}section.card{break-inside:avoid-page;box-shadow:none}}
+</style>
+</head>
+<body>
+<button class="theme-toggle" id="themeToggle" type="button" aria-label="تغییر تم روشن و تاریک">تم</button>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>iOS چطور اسکنر A را از B تشخیص می‌دهد؟<br>و چطور جلوی «دزدی کانکشن» را بگیریم</h1>
+    <p>گزارش تصویری و گام‌به‌گام بر اساس کد واقعی پلاگین <code>zebra_handheld_scanner</code> نسخه 0.0.13 (فایل <code>ZebraScannerPlugin.swift</code>) و کد اپ BRS.</p>
+    <div class="meta">
+      <span>۲۷ آبان ۱۴۰۵</span>
+      <span>نسخهٔ ۴ · خواب اسکنر · اسکن پیوسته</span>
+      <span>فقط iOS</span>
+      <span>بدون سرور · بدون اطلاعات کاربر</span>
+      <span>مکمل BLE_Scenarios_Playbook.html</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap layout">
+  <nav class="toc" aria-label="فهرست">
+    <b>فهرست</b>
+    <a href="#answer"><span class="num">۱</span>پاسخ کوتاه</a>
+    <a href="#flow"><span class="num">۲</span>مسیر فعلی اتصال، گام‌به‌گام</a>
+    <a href="#who"><span class="num">۳</span>چه کسی برنده می‌شود؟</a>
+    <a href="#compare"><span class="num">۴</span>مقایسه با Android</a>
+    <a href="#theft"><span class="num">۵</span>دزدی کانکشن در کد فعلی</a>
+    <a href="#fix"><span class="num">۶</span>مکانیزم جایگزین</a>
+    <a href="#reconnect"><span class="num">۷</span>اتصال مجدد و «fresh»</a>
+    <a href="#dormancy"><span class="num">۸</span>خواب اسکنر (Dormancy)</a>
+    <a href="#code"><span class="num">۹</span>تغییرات کد</a>
+    <a href="#tests"><span class="num">۱۰</span>تست‌ها</a>
+    <a href="#open"><span class="num">۱۱</span>موارد نیازمند بررسی</a>
+  </nav>
+
+  <main>
+  <!-- ====================================================== 1 -->
+  <section class="card" id="answer">
+    <h2>۱. پاسخ کوتاه</h2>
+    <div class="callout bad">
+      <p class="answer">در اتصال اول، iOS اسکنر A را از B تشخیص نمی‌دهد.</p>
+      <p>QR4 در iOS فقط یک متن معمولی است: <code>Please scan the BLE STC barcode to connect to: &lt;نام آیفون&gt;</code>. اسکنر با خواندن آن هیچ تنظیمی نمی‌گیرد. هیچ اطلاعاتی هم از این طریق به آیفون نمی‌رسد.</p>
+    </div>
+
+    <div class="grid2">
+      <div class="tile">
+        <h4><span class="badge b-warn">اتصال اول</span> حدس بر اساس نزدیکی</h4>
+        <p>آیفون همه دستگاه‌های BLE اطراف را اسکن می‌کند. <b>اولین</b> دستگاهی که دو شرط زیر را داشته باشد، وصل می‌شود:</p>
+        <ol>
+          <li>نامش (با حروف کوچک) به <code>ble</code> ختم شود.</li>
+          <li>قدرت سیگنال (RSSI) در لحظه دیده‌شدن بیشتر از <span class="n">-65 dBm</span> باشد.</li>
+        </ol>
+        <p>یعنی تشخیص بر اساس «نزدیکی» است، نه «هویت». اسکنر داخل دست اپراتور معمولاً نزدیک‌ترین است. برای همین در تست با یک اسکنر درست کار می‌کند.</p>
+      </div>
+      <div class="tile">
+        <h4><span class="badge b-ok">اتصال مجدد</span> هویت دقیق</h4>
+        <p>بعد از اولین اتصال، پلاگین <code>peripheral.identifier</code> را ذخیره می‌کند. این یک UUID است که خود iOS برای هر دستگاه BLE می‌سازد (iOS آدرس MAC را به اپ نمی‌دهد).</p>
+        <p>در اتصال مجدد، iOS دقیقاً همان دستگاه را صدا می‌زند. پس در این مرحله A و B کاملاً از هم جدا هستند.</p>
+      </div>
+    </div>
+
+    <div class="callout warn">
+      <p class="q">نکته مهم دربارهٔ QR4</p>
+      <p>در iOS، اسکن بلوتوث با <b>باز شدن صفحه QR4</b> شروع می‌شود، نه با <b>خواندن</b> QR4. این همان رفتاری است که در <code>Phases Overview.md</code> ثبت شده: «iOS needed tap Next». زدن Next صفحه چهارم را می‌سازد و همان لحظه اسکن شروع می‌شود.</p>
+    </div>
+
+    <div class="callout bad">
+      <p class="q">دزدی کانکشن در کد فعلی ممکن است</p>
+      <p>علت آن اسکنر B نیست. در BLE، اسکنر B نمی‌تواند اتصال A را قطع کند. علت دو نقص در پلاگین است: <b>اسکن بلوتوث بعد از وصل‌شدن A خاموش نمی‌شود</b>، و <b>پلاگین هیچ قفل مالکیتی ندارد</b>. راه‌حل در <a href="#fix">بخش ۶</a> آمده است: توکن ثابت هر گوشی در QR4 + قفل مالکیت.</p>
+    </div>
+  </section>
+
+  <!-- ====================================================== 2 -->
+  <section class="card" id="flow">
+    <h2>۲. مسیر فعلی اتصال در iOS، گام‌به‌گام</h2>
+    <p class="lead">هر گام با شماره خط کد واقعی. فایل: <code>ios/.../ZebraScannerPlugin.swift</code></p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="ic"><span class="no">۱</span>
+          <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="16" y="4" width="32" height="56" rx="6" fill="none" stroke="currentColor" stroke-width="3"/><path d="M24 22h16M24 30h16M24 38h10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+        </div>
+        <div>
+          <h4>صفحه QR4 باز می‌شود و اسکن شروع می‌شود</h4>
+          <p>ویجت <code>_ConnectionTutorialConnect</code> در <code>initState</code> متد <code>autoConnectBle()</code> را صدا می‌زند. در Swift، پرچم <code>isScanningForAutoConnect = true</code> می‌شود و <code>scanForPeripherals(withServices: nil, options: nil)</code> اجرا می‌شود.</p>
+          <p><code>withServices: nil</code> یعنی <b>همهٔ</b> دستگاه‌های BLE اطراف: هدفون، ساعت، تلویزیون، و همهٔ اسکنرها.</p>
+          <p class="where">Dart: <code>ble_scanner_settings_bottom_sheet.dart:343</code> · Swift: <code>:58-61</code></p>
+        </div>
+      </div>
+
+      <div class="step warn">
+        <div class="ic"><span class="no">۲</span>
+          <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="8" y="8" width="20" height="20" fill="none" stroke="currentColor" stroke-width="3"/><rect x="36" y="8" width="20" height="20" fill="none" stroke="currentColor" stroke-width="3"/><rect x="8" y="36" width="20" height="20" fill="none" stroke="currentColor" stroke-width="3"/><path d="M38 38h6v6h-6zM48 48h6v6h-6zM48 38h6M38 50h4" stroke="currentColor" stroke-width="3"/></svg>
+        </div>
+        <div>
+          <h4>QR4 فقط یک متن نمایش می‌دهد</h4>
+          <p>مقدار برگشتی یک متن است: <code>"Please scan the BLE STC barcode to connect to: \(deviceName)"</code>. این متن با <code>%%SpecCode</code> شروع نمی‌شود، پس برای اسکنر <b>دستور</b> نیست.</p>
+          <p>وقتی اسکنر آن را می‌خواند: هیچ تنظیمی عوض نمی‌شود، و چون هنوز به جایی وصل نیست، داده به هیچ گوشی‌ای نمی‌رسد. طبق دفترچهٔ اسکنر، در <b>Normal Mode</b> اگر ارسال ناموفق باشد، داده از بین می‌رود و اسکنر سه بوق کوتاهِ بم می‌زند. فقط در <b>Storage Mode</b> داده نگه داشته می‌شود. پس این متن بعداً به‌عنوان بارکد به اپ نمی‌رسد.</p>
+          <p class="where">Swift: <code>:65-66</code></p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="ic"><span class="no">۳</span>
+          <svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="5" fill="currentColor"/><path d="M20 20a17 17 0 0 0 0 24M44 20a17 17 0 0 1 0 24M12 12a28 28 0 0 0 0 40M52 12a28 28 0 0 1 0 40" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+        </div>
+        <div>
+          <h4>رادیوی آیفون تبلیغ (Advertisement) دستگاه‌ها را می‌شنود</h4>
+          <p>هر اسکنر آزاد در حالت BLE مرتب بستهٔ تبلیغ می‌فرستد. هر بار iOS یک دستگاه را ببیند، تابع <code>didDiscover</code> را با <b>نام</b> و <b>RSSI همان لحظه</b> صدا می‌زند.</p>
+          <p>چون <code>options: nil</code> است، <code>AllowDuplicates</code> خاموش است. iOS هر دستگاه را معمولاً <b>فقط یک بار</b> در هر دور اسکن گزارش می‌کند. پس اگر اسکنر A اولین بار با <span class="n">-70 dBm</span> دیده شود (اپراتور هنوز در حال نزدیک شدن است)، ممکن است دیگر هرگز گزارش نشود، حتی وقتی کنار گوشی است. این یکی از دلیل‌های احتمالی «iOS needed re-scan» است.</p>
+          <p class="where">Swift: <code>:211</code></p>
+        </div>
+      </div>
+
+      <div class="step warn">
+        <div class="ic"><span class="no">۴</span>
+          <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M8 10h48L38 34v18l-12 6V34z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/></svg>
+        </div>
+        <div>
+          <h4>فیلتر: نام و قدرت سیگنال</h4>
+<pre><code><span class="kw">let</span> name = peripheral.name?.lowercased() ?? <span class="st">""</span>
+<span class="kw">let</span> isScanner = name.<span class="fn">hasSuffix</span>(<span class="st">"ble"</span>)                              <span class="cm">// :217</span>
+<span class="kw">if</span> isScanner &amp;&amp; RSSI.intValue &gt; -<span class="ty">65</span> &amp;&amp; RSSI.intValue != <span class="ty">127</span> { ... } <span class="cm">// :219</span></code></pre>
+          <p>هیچ چیزی از QR4، هیچ شناسه‌ای و هیچ تأییدی در این شرط نیست. هر دستگاهی که نامش به <code>ble</code> ختم شود رد نمی‌شود؛ مثلاً یک اسپیکر با نام <code>Mini Portable</code> هم از این فیلتر عبور می‌کند. عدد <span class="n">127</span> یعنی RSSI نامعتبر.</p>
+        </div>
+      </div>
+
+      <div class="step bad">
+        <div class="ic"><span class="no">۵</span>
+          <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M14 34l12 12 24-28" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div>
+          <h4>اولین دستگاهِ قبول‌شده برنده است</h4>
+          <p>بلافاصله <code>stopScan()</code>، پرچم خاموش، <code>connectedPeripheral = peripheral</code> و <code>connect(peripheral)</code>. هیچ مقایسه‌ای بین چند کاندیدا انجام نمی‌شود؛ «نزدیک‌ترین» انتخاب نمی‌شود، «اولین» انتخاب می‌شود.</p>
+          <p class="where">Swift: <code>:220-223</code></p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="ic"><span class="no">۶</span>
+          <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="10" y="14" width="44" height="36" rx="5" fill="none" stroke="currentColor" stroke-width="3"/><path d="M10 24h44M20 34h10M20 40h18" stroke="currentColor" stroke-width="3"/></svg>
+        </div>
+        <div>
+          <h4>بعد از اتصال: ذخیرهٔ هویت</h4>
+          <p>در <code>didConnect</code>، مقدار <code>peripheral.identifier.uuidString</code> در <code>UserDefaults</code> با کلید <code>ZebraScannerLastDeviceUUID</code> ذخیره می‌شود. بعد سرویس‌ها کشف می‌شوند، روی همهٔ characteristicهای notify اشتراک گرفته می‌شود و <code>onScannerConnected(true)</code> به Flutter می‌رود.</p>
+          <p>این UUID مخصوص <b>این آیفون</b> است. همان اسکنر روی آیفون دیگر UUID دیگری دارد.</p>
+          <p class="where">Swift: <code>:228-246</code>، <code>:283</code></p>
+        </div>
+      </div>
+
+      <div class="step ok">
+        <div class="ic"><span class="no">۷</span>
+          <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M50 22a20 20 0 1 0 4 14" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><path d="M52 8v14H38" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div>
+          <h4>اتصال مجدد: دقیق، با UUID</h4>
+          <p><code>connectToLastDevice</code> با <code>retrievePeripherals(withIdentifiers: [uuid])</code> همان دستگاه را پیدا می‌کند و <code>connect</code> می‌زند. اگر در <b>۵ ثانیه</b> وصل نشود، لغو می‌کند. در این مسیر اسکن انجام نمی‌شود، پس B انتخاب نمی‌شود.</p>
+          <p class="where">Swift: <code>:71-92</code></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====================================================== 3 -->
+  <section class="card" id="who">
+    <h2>۳. چه کسی برنده می‌شود؟</h2>
+    <p class="lead">یک صحنهٔ واقعی در دفتر فرودگاه، لحظه‌ای که صفحه QR4 باز می‌شود. اعداد RSSI نمونه هستند.</p>
+
+    <div class="diagram wide" role="img" aria-label="نمودار رادار: آیفون در مرکز، دایره مرز -65 dBm، اسکنرهای A و B و یک اسپیکر داخل دایره">
+      <svg viewBox="0 0 760 380" xmlns="http://www.w3.org/2000/svg">
+        <circle class="zone" cx="380" cy="190" r="150"/>
+        <circle class="ring" cx="380" cy="190" r="150"/>
+        <text x="190" y="30" text-anchor="middle" class="muted">دایره = مرز</text>
+        <text x="190" y="48" text-anchor="middle" class="lt muted">RSSI &gt; -65 dBm (~1–3 m)</text>
+        <rect x="362" y="160" width="36" height="60" rx="7" fill="var(--surface)" stroke="var(--text)" stroke-width="2"/>
+        <text x="380" y="240" text-anchor="middle" font-weight="700">آیفون</text>
+
+        <circle class="dot-ok" cx="318" cy="140" r="11"/>
+        <text x="318" y="118" text-anchor="middle" font-weight="700">اسکنر A · در دست</text>
+        <text x="318" y="165" text-anchor="middle" class="lt">-52 dBm ✓</text>
+
+        <circle class="dot-warn" cx="470" cy="260" r="11"/>
+        <text x="470" y="290" text-anchor="middle" font-weight="700">اسکنر B · روی میز</text>
+        <text x="470" y="307" text-anchor="middle" class="lt">-61 dBm ✓</text>
+
+        <circle class="dot-bad" cx="262" cy="262" r="11"/>
+        <text x="262" y="292" text-anchor="middle" font-weight="700">اسپیکر بلوتوث</text>
+        <text x="262" y="309" text-anchor="middle" class="lt">"Mini Portable"</text>
+        <text x="262" y="326" text-anchor="middle" class="lt">-63 dBm ✓</text>
+
+        <circle class="dot-mut" cx="660" cy="90" r="11"/>
+        <text x="660" y="68" text-anchor="middle">اسکنر C · همکار</text>
+        <text x="660" y="116" text-anchor="middle" class="lt">-79 dBm ✗</text>
+
+        <circle class="dot-mut" cx="110" cy="110" r="11"/>
+        <text x="110" y="88" text-anchor="middle">هدفون</text>
+        <text x="110" y="136" text-anchor="middle" class="lt">name ✗</text>
+
+        <text x="380" y="360" text-anchor="middle" font-weight="700">برنده = اولین بسته‌ای که iOS بعد از شروع اسکن از میان ✓ها بشنود</text>
+      </svg>
+    </div>
+
+    <div class="tablewrap"><table>
+      <thead><tr><th>دستگاه</th><th>نام به ble ختم می‌شود؟</th><th>RSSI بالای <span class="n">-65</span>؟</th><th>نتیجه</th></tr></thead>
+      <tbody>
+        <tr><td>اسکنر A (در دست اپراتور، QR4 را خوانده)</td><td>بله</td><td>بله</td><td><span class="badge b-ok">کاندیدا</span></td></tr>
+        <tr><td>اسکنر B (روی میز، روشن، آزاد)</td><td>بله</td><td>بله</td><td><span class="badge b-warn">کاندیدا</span> ممکن است برنده شود</td></tr>
+        <tr><td>اسپیکر بلوتوث با نام <code>Mini Portable</code></td><td>بله (<code>portable</code>)</td><td>بله</td><td><span class="badge b-bad">کاندیدا</span> ممکن است برنده شود</td></tr>
+        <tr><td>اسکنر C (همکار، ۴ متر دورتر)</td><td>بله</td><td>خیر</td><td>رد</td></tr>
+        <tr><td>هدفون</td><td>خیر</td><td>—</td><td>رد</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout">
+      <p><b>چرا نتیجه تصادفی است؟</b> هر دستگاه با فاصلهٔ زمانی خودش تبلیغ می‌فرستد (معمولاً از چند ده میلی‌ثانیه تا حدود یک ثانیه). رادیوی آیفون هم به‌صورت دوره‌ای گوش می‌دهد. پس «اولین بستهٔ شنیده‌شده» به زمان‌بندی بستگی دارد، نه به فاصله. RSSI هم با بدن، دستکش و جهت دست تا حدود ۱۰ دسی‌بل نوسان دارد.</p>
+      <p><b>چرا در تست‌ها خوب کار کرد؟</b> در تست معمولاً فقط یک اسکنر روشن نزدیک گوشی بود. با دو اسکنر روشن در فاصلهٔ یک متری، نتیجه قابل پیش‌بینی نیست.</p>
+    </div>
+  </section>
+
+  <!-- ====================================================== 4 -->
+  <section class="card" id="compare">
+    <h2>۴. مقایسه با Android</h2>
+    <p class="lead">Android همین مشکل را ندارد، چون QR4 در آن یک دستور واقعی با شناسهٔ گوشی است.</p>
+    <div class="vs">
+      <div class="col and">
+        <h4>Android — هدفمند</h4>
+        <ol>
+          <li>SDK یک شناسهٔ ۴ بایتی برای هر نصب می‌سازد.</li>
+          <li>QR4 = <code>%%SpecCodeBA44</code> + mode + شناسه. نمونه: <code>%%SpecCodeBA440366B13FD4</code></li>
+          <li>اسکنر این دستور را اجرا می‌کند و شناسه را در تبلیغ خودش قرار می‌دهد.</li>
+          <li>گوشی فقط تبلیغی را قبول می‌کند که همین شناسه را داشته باشد (<code>05FD</code>+ID یا <code>3301</code>+ID).</li>
+          <li>نتیجه: فقط اسکنری که QR را خوانده وصل می‌شود.</li>
+        </ol>
+      </div>
+      <div class="col ios">
+        <h4>iOS — حدسی</h4>
+        <ol>
+          <li>شناسه‌ای ساخته نمی‌شود.</li>
+          <li>QR4 = متن معمولی، بدون دستور.</li>
+          <li>اسکنر هیچ تغییری نمی‌کند.</li>
+          <li>گوشی هر دستگاه «…ble» با RSSI بالای <span class="n">-65</span> را قبول می‌کند.</li>
+          <li>نتیجه: اولین دستگاه نزدیک وصل می‌شود، شاید اسکنر اشتباه.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====================================================== 5 -->
+  <section class="card" id="theft">
+    <h2>۵. دزدی کانکشن در کد فعلی</h2>
+    <div class="callout">
+      <p class="q">تعریف شما</p>
+      <p>اسکنر A به آیفون وصل است. سپس اسکنر B خودسرانه این اتصال را قطع می‌کند و خودش به همان آیفون وصل می‌شود.</p>
+    </div>
+
+    <div class="callout ok">
+      <p class="q">واقعیت فنی BLE</p>
+      <ul>
+        <li>اسکنر B <b>نمی‌تواند</b> اتصال A را قطع کند. هر دستگاه BLE فقط اتصال خودش را کنترل می‌کند.</li>
+        <li>اسکنر B هم نمی‌تواند «خودش» به آیفون وصل شود. اسکنر فقط تبلیغ می‌کند؛ <b>همیشه آیفون است که تصمیم به اتصال می‌گیرد</b>.</li>
+        <li>آیفون می‌تواند هم‌زمان به چند دستگاه BLE وصل باشد. وصل شدن B به‌خودی‌خود A را قطع نمی‌کند.</li>
+      </ul>
+      <p>پس اگر B جای A را بگیرد، تصمیم را <b>کد پلاگین</b> گرفته است. خبر خوب: یعنی کاملاً با نرم‌افزار قابل جلوگیری است.</p>
+    </div>
+
+    <div class="callout warn">
+      <p class="q">آیا اسکنری که به گوشی دیگری متصل است، همچنان تبلیغ (advertise) می‌کند؟</p>
+      <p><b>به احتمال زیاد نه، ولی در مستندات صریح نوشته نشده و باید تست شود.</b> <span class="badge b-warn">بررسی شود</span></p>
+      <ul>
+        <li><b>شاهد از دفترچه:</b> چراغ «آبی و سبزِ یکی‌درمیان» یعنی «BLE pairing state» (در انتظار اتصال، یعنی در حال تبلیغ). بعد از اتصال، چراغ آبی ثابت می‌شود. یعنی اسکنر از حالت جفت‌سازی خارج می‌شود.</li>
+        <li><b>رفتار رایج:</b> دستگاه‌های BLE ساده مثل این اسکنر فقط یک اتصال را پشتیبانی می‌کنند و بعد از اتصال تبلیغ را قطع می‌کنند.</li>
+        <li><b>تست ۱۰ دقیقه‌ای (iOS-15):</b> اسکنر را به گوشی ۱ وصل کنید. روی گوشی ۲ اپ nRF Connect را باز کنید و اسکن کنید. اگر نام اسکنر دیده نشد، تبلیغ نمی‌کند. اگر دیده شد، پرچم «Connectable» را ببینید و یک بار Connect بزنید.</li>
+        <li><b>طراحی ما در هر دو حالت امن است:</b> اگر تبلیغ نکند، گوشی دیگر اصلاً آن را نمی‌بیند. اگر تبلیغ کند، توکنِ داخل تبلیغ مال گوشی ۱ است و فیلتر توکن در گوشی‌های دیگر آن را رد می‌کند. خود گوشی ۱ هم در حالت owned اسکن نمی‌کند.</li>
+      </ul>
+    </div>
+
+    <h3>مسیر اصلی دزدی: «اسکنِ جامانده»</h3>
+    <p>اسکن فقط در یک جا خاموش می‌شود: وقتی یک دستگاه از فیلتر عبور کند (<code>:220</code>). در هیچ جای دیگری <code>stopScan()</code> صدا زده نمی‌شود: نه بعد از اتصال از مسیر <code>connectToLastDevice</code>، نه با بستن bottom sheet، نه با <code>disconnect</code>.</p>
+
+    <div class="diagram wide" role="img" aria-label="نمودار ترتیبی دزدی کانکشن در کد فعلی">
+      <svg viewBox="0 0 760 520" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+          <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ah-bad"/></marker>
+        </defs>
+        <rect class="node acc" x="600" y="12" width="140" height="40" rx="10"/><text x="670" y="38" text-anchor="middle" font-weight="700">اپ (Flutter)</text>
+        <rect class="node acc" x="420" y="12" width="140" height="40" rx="10"/><text x="490" y="38" text-anchor="middle" font-weight="700">پلاگین iOS</text>
+        <rect class="node ok" x="240" y="12" width="140" height="40" rx="10"/><text x="310" y="38" text-anchor="middle" font-weight="700">اسکنر A</text>
+        <rect class="node bad" x="60" y="12" width="140" height="40" rx="10"/><text x="130" y="38" text-anchor="middle" font-weight="700">اسکنر B</text>
+        <line class="life" x1="670" y1="52" x2="670" y2="505"/>
+        <line class="life" x1="490" y1="52" x2="490" y2="505"/>
+        <line class="life" x1="310" y1="52" x2="310" y2="505"/>
+        <line class="life" x1="130" y1="52" x2="130" y2="505"/>
+
+        <path class="edge" d="M668 85 L494 85" marker-end="url(#a1)"/>
+        <circle class="numc" cx="680" cy="85" r="11"/><text x="680" y="89" text-anchor="middle" class="numt">1</text>
+        <text x="580" y="78" text-anchor="middle" class="lt">autoConnectBle()</text>
+        <rect x="430" y="96" width="120" height="22" rx="6" fill="var(--warn-soft)" stroke="var(--warn)"/><text x="490" y="112" text-anchor="middle" font-size="12">اسکن روشن</text>
+
+        <path class="edge" d="M668 145 L494 145" marker-end="url(#a1)"/>
+        <circle class="numc" cx="680" cy="145" r="11"/><text x="680" y="149" text-anchor="middle" class="numt">2</text>
+        <text x="580" y="138" text-anchor="middle" class="lt">connectToLastDevice()</text>
+        <path class="edge ok" d="M488 165 L314 165" marker-end="url(#a1)"/>
+        <text x="400" y="158" text-anchor="middle" font-size="12">connect(A)</text>
+
+        <path class="edge" d="M492 195 L666 195" marker-end="url(#a1)"/>
+        <circle class="numc" cx="680" cy="195" r="11"/><text x="680" y="199" text-anchor="middle" class="numt">3</text>
+        <text x="580" y="188" text-anchor="middle" font-size="12">نمایش اتصال به A</text>
+        <rect x="430" y="205" width="120" height="22" rx="6" fill="var(--bad-soft)" stroke="var(--bad)"/><text x="490" y="221" text-anchor="middle" font-size="12">اسکن هنوز روشن!</text>
+
+        <path class="edge bad" d="M132 260 L486 260" marker-end="url(#a2)"/>
+        <circle class="numc bad" cx="120" cy="260" r="11"/><text x="120" y="264" text-anchor="middle" class="numt">4</text>
+        <text x="300" y="252" text-anchor="middle" font-size="12">تبلیغ اسکنر B (نزدیک گوشی)</text>
+
+        <rect x="395" y="276" width="190" height="40" rx="6" fill="var(--bad-soft)" stroke="var(--bad)"/>
+        <circle class="numc bad" cx="598" cy="296" r="11"/><text x="598" y="300" text-anchor="middle" class="numt">5</text>
+        <text x="490" y="292" text-anchor="middle" font-size="11.5" class="lt">connectedPeripheral = B</text>
+        <text x="490" y="308" text-anchor="middle" font-size="11.5" class="lt">connect(B)</text>
+        <path class="edge bad" d="M488 335 L134 335" marker-end="url(#a2)"/>
+
+        <path class="edge bad" d="M492 365 L666 365" marker-end="url(#a2)"/>
+        <circle class="numc bad" cx="680" cy="365" r="11"/><text x="680" y="369" text-anchor="middle" class="numt">6</text>
+        <text x="580" y="358" text-anchor="middle" font-size="12">نمایش اتصال به B</text>
+
+        <path class="edge" d="M312 410 L486 410" marker-end="url(#a1)"/>
+        <circle class="numc bad" cx="300" cy="410" r="11"/><text x="300" y="414" text-anchor="middle" class="numt">7</text>
+        <text x="400" y="402" text-anchor="middle" font-size="12">بارکد A هنوز می‌رسد</text>
+
+        <path class="edge" d="M668 460 L494 460" marker-end="url(#a1)"/>
+        <circle class="numc bad" cx="680" cy="460" r="11"/><text x="680" y="464" text-anchor="middle" class="numt">8</text>
+        <text x="580" y="452" text-anchor="middle" font-size="12">دکمهٔ قطع اتصال</text>
+        <path class="edge" d="M488 480 L134 480" marker-end="url(#a1)"/>
+        <text x="310" y="474" text-anchor="middle" font-size="12">فقط B قطع می‌شود و A گروگان می‌ماند</text>
+      </svg>
+    </div>
+
+    <ol class="legend">
+      <li>bottom sheet باز می‌شود و صفحه QR4 ساخته می‌شود. <code>autoConnectBle()</code> اسکن را روشن می‌کند. (در طرح جدید، که فقط QR4 در sheet است، این همیشه با باز شدن sheet رخ می‌دهد.)</li>
+      <li>هم‌زمان تایمر ۵ ثانیه‌ای (<code>my_app.dart:55</code>) یا تایمر جدید sheet، <code>connectToLastDevice()</code> را صدا می‌زند و A از مسیر UUID وصل می‌شود.</li>
+      <li>اپ «متصل به A» نشان می‌دهد و sheet به پنل اسکنر می‌رود. اما اسکن هنوز روشن است، چون این مسیر <code>stopScan()</code> ندارد.</li>
+      <li>اسکنر B روشن می‌شود یا همکاری با اسکنر B از کنار میز رد می‌شود. iOS آن را برای اولین بار با RSSI بالای <span class="n">-65</span> می‌بیند.</li>
+      <li>پلاگین بدون هیچ بررسی‌ای <code>connectedPeripheral</code> را با B بازنویسی می‌کند و به B وصل می‌شود (<code>:222-223</code>).</li>
+      <li><code>didConnect(B)</code> وضعیت A را پاک می‌کند، UUID ذخیره‌شده را B می‌کند و به اپ خبر اتصال می‌دهد. اپراتور فکر می‌کند هنوز به A وصل است یا نمی‌فهمد چه شد.</li>
+      <li><b>اتصال شبح:</b> A هنوز در سطح سیستم‌عامل وصل است. اشتراک notify آن فعال است و <code>didUpdateValueFor</code> بررسی نمی‌کند داده از کدام دستگاه است (<code>:302</code>). پس بارکدهای A و B هر دو به اپ می‌رسند.</li>
+      <li><code>disconnect</code> فقط <code>connectedPeripheral</code> (یعنی B) را قطع می‌کند (<code>:145-147</code>). A وصل می‌ماند، تبلیغ نمی‌کند و هیچ گوشی دیگری نمی‌تواند از آن استفاده کند. رویداد قطع A هم نادیده گرفته می‌شود (<code>:258</code>).</li>
+    </ol>
+
+    <h3>مسیرهای دیگر</h3>
+    <div class="grid2">
+      <div class="tile">
+        <h4><span class="badge b-bad">مسیر ۲</span> قطع کوتاه A + باز کردن sheet</h4>
+        <p>A برای چند ثانیه قطع می‌شود (فاصله، Sleep، فلز). اپراتور sheet را باز می‌کند تا A برگردد. صفحه QR4 اسکن را روشن می‌کند. اگر B زودتر از تایمرِ A دیده شود، B وصل می‌شود. از دید اپراتور: «B جای A را دزدید».</p>
+      </div>
+      <div class="tile">
+        <h4><span class="badge b-bad">مسیر ۳</span> مسابقهٔ دو مسیر</h4>
+        <p><code>connectToLastDevice</code> قبل از اتصال <code>connectedPeripheral = peripheral</code> می‌گذارد (<code>:77</code>). اسکن هم همین متغیر را می‌نویسد (<code>:222</code>). آخرین نوشتن برنده است و دستگاه دیگر به اتصال شبح تبدیل می‌شود.</p>
+      </div>
+      <div class="tile">
+        <h4><span class="badge b-warn">مسیر ۴</span> اسکن بعد از بستن sheet</h4>
+        <p>اگر اپراتور sheet را بدون اتصال ببندد، اسکن روشن می‌ماند. ساعتی بعد، اولین «…ble» نزدیک به‌طور خودکار وصل می‌شود؛ حتی یک دستگاه غیر اسکنر.</p>
+      </div>
+      <div class="tile">
+        <h4><span class="badge b-warn">مسیر ۵</span> اسکنر قدیمی روی شارژ</h4>
+        <p>اسکنرهای روی شارژ معمولاً روشن و آزادند و تبلیغ می‌کنند. اگر شارژر نزدیک میز کار باشد، در هر اسکن باز، کاندیدای قوی هستند.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====================================================== 6 -->
+  <section class="card" id="fix">
+    <h2>۶. مکانیزم جایگزین</h2>
+    <p class="lead">دو لایه. لایهٔ ۱ مطمئن می‌شود که اتصال اول به اسکنر درست انجام شود. لایهٔ ۲ مطمئن می‌شود که بعد از اتصال، هیچ اسکنر دیگری جای آن را نگیرد. هر دو فقط روی گوشی و اسکنر اجرا می‌شوند: بدون سرور و بدون اطلاعات کاربر.</p>
+
+    <div class="callout ok">
+      <p class="q">اصل طلایی: «تعویض فقط با اثبات»</p>
+      <p>اسکنر متصل فقط وقتی عوض می‌شود که اپراتور <b>عمداً</b> QR4 را با اسکنر جدید بخواند، یا دکمهٔ Disconnect را بزند. هر اتصال دیگری رد می‌شود. پس تعریف شما از دزدی (اتصال خودسرانه) از نظر طراحی غیرممکن می‌شود.</p>
+    </div>
+
+    <h3>لایهٔ ۱ — هویت در اتصال اول</h3>
+    <div class="callout ok">
+      <p class="q">تصمیم تیم: گزینهٔ الف، با توکن ثابت تا Disconnect</p>
+      <p>QR4 در iOS هم مثل Android یک دستور واقعی می‌شود. هر آیفون یک توکن ۴ بایتی دارد. توکن با جفت‌سازی عوض نمی‌شود؛ <b>فقط دکمهٔ Disconnect</b> آن را فراموش می‌کند و توکن جدید (و QR4 جدید) می‌سازد. گزینهٔ ب (Nonce) کنار گذاشته شد.</p>
+    </div>
+    <div class="pipe">
+      <div class="p"><b>۱</b>در اولین اجرای اپ و بعد از هر Disconnect، گوشی یک توکن تصادفی ۴ بایتی می‌سازد و در <code>UserDefaults</code> ذخیره می‌کند. مثلاً <code>9C21E07A</code></div>
+      <div class="arrow">←</div>
+      <div class="p"><b>۲</b>QR4 = <code>%%SpecCodeBA44</code> + <code>03</code> + توکن. QR4 این گوشی تا Disconnect بعدی همین است.</div>
+      <div class="arrow">←</div>
+      <div class="p"><b>۳</b>اسکنرِ در دست QR را می‌خواند، توکن را نگه می‌دارد و در تبلیغ خود می‌گذارد.</div>
+      <div class="arrow">←</div>
+      <div class="p ok"><b>۴</b>iOS در حالت pairing فقط تبلیغی را قبول می‌کند که توکن این گوشی را دارد.</div>
+      <div class="arrow">←</div>
+      <div class="p ok"><b>۵</b>اتصال، قفل مالکیت، بوق، LED آبی و برچسب بزرگ اسکنر.</div>
+    </div>
+<pre><code><span class="kw">private func</span> <span class="fn">advertisesToken</span>(<span class="kw">_</span> ad: [<span class="ty">String</span>: <span class="ty">Any</span>]) -&gt; <span class="ty">Bool</span> {
+    <span class="kw">let</span> token: <span class="ty">Data</span> = phoneToken                         <span class="cm">// 4 random bytes, kept until Disconnect</span>
+    <span class="kw">if let</span> sd = ad[<span class="ty">CBAdvertisementDataServiceDataKey</span>] <span class="kw">as</span>? [<span class="ty">CBUUID</span>: <span class="ty">Data</span>] {
+        <span class="kw">for</span> (_, data) <span class="kw">in</span> sd <span class="kw">where</span> data.<span class="fn">range</span>(of: token) != <span class="kw">nil</span> { <span class="kw">return true</span> }
+    }
+    <span class="kw">if let</span> md = ad[<span class="ty">CBAdvertisementDataManufacturerDataKey</span>] <span class="kw">as</span>? <span class="ty">Data</span>,
+       md.<span class="fn">range</span>(of: token) != <span class="kw">nil</span> { <span class="kw">return true</span> }
+    <span class="kw">return false</span>
+}</code></pre>
+
+    <h4>ویژگی‌های توکن ثابت</h4>
+    <ul>
+      <li><b>هم‌مدل با Android.</b> SDK اندروید هم برای هر نصب یک شناسهٔ ثابت می‌سازد. دو پلتفرم یک منطق دارند.</li>
+      <li><b>Disconnect = فراموشی کامل.</b> identifier اسکنر و توکن هر دو پاک می‌شوند و توکن جدید ساخته می‌شود. اسکنرهای قبلی توکن قدیمی دارند و دیگر هرگز مطابقت ندارند؛ نه در جفت‌سازی و نه در اتصال مجدد. اتصال بعدی فقط با خواندن QR4 جدید برقرار می‌شود. در Android هم باید همین کار انجام شود (ساخت دوبارهٔ شناسهٔ SDK) <span class="badge b-warn">بررسی شود</span>.</li>
+      <li><b>محل ذخیره: <code>UserDefaults</code></b>، نه Keychain. با حذف و نصب دوبارهٔ اپ، توکن جدید ساخته می‌شود؛ همان رفتار Android بعد از «clear data».</li>
+      <li><b>تکراری شدن توکن دو گوشی:</b> ۴ بایت حدود ۴٫۳ میلیارد حالت دارد. در یک فرودگاه احتمال آن عملاً صفر است.</li>
+      <li><b>اسکنر مالک را می‌داند.</b> اسکنر توکنِ آخرین گوشی‌ای را نگه می‌دارد که QR4 آن را خوانده است. از همین برای اتصال مجدد امن استفاده می‌کنیم (<a href="#reconnect">بخش ۷</a>).</li>
+      <li><b>وابستگی</b> <span class="badge b-warn">بررسی شود</span>: با nRF Connect روی آیفون دیده شود توکن در کدام بخش تبلیغ است (service data با UUID <code>FD05</code> یا manufacturer data) و بایت <code>03</code> چه معنایی دارد.</li>
+    </ul>
+
+    <h4>اگر چند اسکنر توکن فعلی را داشته باشند</h4>
+    <p>چون Disconnect توکن را عوض می‌کند، فقط اسکنرهایی توکن فعلی را دارند که <b>بعد از آخرین Disconnect</b> QR4 این گوشی را خوانده‌اند. معمولاً فقط یکی است.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>حالت</th><th>مثال</th><th>قانون</th></tr></thead>
+      <tbody>
+        <tr><td>فقط یک اسکنر توکن فعلی را دارد</td><td>اسکنرِ در دست QR4 را خواند</td><td>همان وصل می‌شود.</td></tr>
+        <tr><td>مالک ذخیره‌شده و اسکنر دیگری که همین QR4 را خوانده</td><td>S-07 مالک بود و قطع شد؛ اپراتور بدون Disconnect، QR4 را با S-12 هم خواند</td><td>پنجرهٔ ۱٫۵ ثانیه‌ای با <code>AllowDuplicates = true</code>. اگر مالک (identifier ذخیره‌شده) دیده شود، اولویت با اوست؛ وگرنه قوی‌ترین RSSI.</td></tr>
+        <tr><td>اسکنرِ اشتباه وصل شد</td><td>هر حالتی</td><td>اپراتور Disconnect می‌زند ← اسکنر و توکن فراموش می‌شوند ← QR4 جدید ← اسکنر درست آن را می‌خواند.</td></tr>
+        <tr><td>اسکنرهای قبل از آخرین Disconnect</td><td>اسکنر دیروز روی شارژر</td><td>توکن قدیمی دارند و هرگز مطابقت ندارند.</td></tr>
+      </tbody>
+    </table></div>
+    <p class="small"><code>AllowDuplicates = true</code> مشکل گام ۳ بخش ۲ را هم حل می‌کند: RSSI هر اسکنر در طول پنجره چند بار خوانده می‌شود، نه فقط یک بار.</p>
+
+    <h3>لایهٔ ۲ — قفل مالکیت (جلوگیری مستقیم از دزدی)</h3>
+    <p>پلاگین iOS یک وضعیت مشخص دارد و هر رویداد بلوتوث را با آن می‌سنجد.</p>
+
+    <div class="diagram wide" role="img" aria-label="ماشین حالت قفل مالکیت: idle، pairing، owned، reconnecting">
+      <svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="b1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+          <marker id="b2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ah-ok"/></marker>
+          <marker id="b3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ah-bad"/></marker>
+        </defs>
+        <rect class="node" x="600" y="118" width="140" height="64" rx="14"/>
+        <text x="670" y="146" text-anchor="middle" font-weight="800" class="lt">idle</text>
+        <text x="670" y="167" text-anchor="middle" class="muted" font-size="12">بدون اسکن، بدون مالک</text>
+
+        <rect class="node acc" x="400" y="28" width="150" height="64" rx="14"/>
+        <text x="475" y="56" text-anchor="middle" font-weight="800" class="lt">pairing</text>
+        <text x="475" y="77" text-anchor="middle" class="muted" font-size="12">اسکن با فیلتر توکن</text>
+
+        <rect class="node ok" x="170" y="118" width="160" height="64" rx="14"/>
+        <text x="250" y="146" text-anchor="middle" font-weight="800" class="lt">owned(A)</text>
+        <text x="250" y="167" text-anchor="middle" class="muted" font-size="12">قفل: فقط A</text>
+
+        <rect class="node warn" x="400" y="210" width="150" height="64" rx="14"/>
+        <text x="475" y="238" text-anchor="middle" font-weight="800" class="lt">reconnecting(A)</text>
+        <text x="475" y="259" text-anchor="middle" class="muted" font-size="12">فقط A + توکن</text>
+
+        <path class="edge acc" d="M610 118 C590 80 570 66 552 62" marker-end="url(#b1)"/>
+        <text x="610" y="78" text-anchor="middle" font-size="12">باز شدن sheet</text>
+
+        <path class="edge ok" d="M400 70 C330 80 290 100 268 116" marker-end="url(#b2)"/>
+        <text x="320" y="70" text-anchor="middle" font-size="12">توکن این گوشی</text>
+
+        <path class="edge" d="M300 182 C340 230 370 240 398 242" marker-end="url(#b1)"/>
+        <text x="320" y="240" text-anchor="middle" font-size="12">A قطع شد</text>
+
+        <path class="edge ok" d="M420 210 C370 200 330 190 318 184" marker-end="url(#b2)"/>
+        <text x="380" y="190" text-anchor="middle" font-size="12">A برگشت</text>
+
+        <path class="edge" d="M552 242 C590 230 620 210 640 184" marker-end="url(#b1)"/>
+        <text x="640" y="232" text-anchor="middle" font-size="12">Disconnect</text>
+
+        <path class="edge" d="M250 118 C260 20 560 0 640 116" marker-end="url(#b1)"/>
+        <text x="470" y="14" text-anchor="middle" font-size="12">Disconnect = فراموشی اسکنر و توکن</text>
+
+        <path class="edge bad" d="M110 150 L168 150" marker-end="url(#b3)"/>
+        <text x="60" y="140" text-anchor="middle" font-size="12">اسکنر B</text>
+        <text x="60" y="160" text-anchor="middle" font-size="12" font-weight="800" fill="var(--bad)">رد ✗</text>
+      </svg>
+    </div>
+
+    <ol class="rules">
+      <li><div><b>اسکن فقط در pairing و reconnecting، همیشه با فیلتر توکن.</b> در هر خروج از این دو حالت حتماً <code>stopScan()</code>: اتصال، لغو، بستن sheet، timeout، خاموش شدن بلوتوث.</div></li>
+      <li><div><b>در owned، کشف نادیده گرفته می‌شود.</b> <code>didDiscover</code> بدون هیچ کاری برمی‌گردد.</div></li>
+      <li><div><b>مالک فقط از دو راه تعیین می‌شود:</b> pairing با توکن، یا reconnecting با همان identifier. متغیر <code>pendingPeripheral</code> از <code>owner</code> جداست و هیچ مسیری مالک را زودتر بازنویسی نمی‌کند.</div></li>
+      <li><div><b>اتصال ناخواسته فوراً قطع می‌شود.</b> اگر <code>didConnect</code> برای دستگاهی غیر از مالک یا کاندیدای pairing بیاید، <code>cancelPeripheralConnection</code>.</div></li>
+      <li><div><b>داده فقط از مالک.</b> در <code>didUpdateValueFor</code> اگر <code>peripheral.identifier != ownerId</code>، داده دور ریخته می‌شود. اتصال شبح دیگر بارکد نمی‌فرستد.</div></li>
+      <li><div><b>بازیابی فقط به مالک، با دو فیلتر.</b> identifier باید A باشد و تبلیغ باید توکن این گوشی را داشته باشد. بدون محدودیت زمانی، تا وقتی اپ در foreground است. جزئیات در <a href="#reconnect">بخش ۷</a>.</div></li>
+      <li><div><b>Disconnect = فراموشی کامل.</b> قطع مالک + قطع همهٔ کاندیداها + <code>stopScan</code> + پاک کردن UUID ذخیره‌شده + پاک کردن توکن و ساخت توکن جدید (QR4 جدید). تنها راه خروج از مالکیت همین است.</div></li>
+    </ol>
+
+<pre><code><span class="kw">private enum</span> <span class="ty">Mode</span> { <span class="kw">case</span> idle, pairing, owned(<span class="ty">UUID</span>), reconnecting(<span class="ty">UUID</span>) }
+<span class="kw">private var</span> mode: <span class="ty">Mode</span> = .idle
+
+<span class="kw">private var</span> lockedId: <span class="ty">UUID</span>? {
+    <span class="kw">switch</span> mode {
+    <span class="kw">case</span> .owned(<span class="kw">let</span> id), .reconnecting(<span class="kw">let</span> id): <span class="kw">return</span> id
+    <span class="kw">default</span>: <span class="kw">return nil</span>
+    }
+}
+
+<span class="kw">public func</span> <span class="fn">centralManager</span>(<span class="kw">_</span> c: <span class="ty">CBCentralManager</span>, didDiscover p: <span class="ty">CBPeripheral</span>,
+                           advertisementData ad: [<span class="ty">String</span>: <span class="ty">Any</span>], rssi: <span class="ty">NSNumber</span>) {
+    <span class="kw">guard</span> <span class="fn">advertisesToken</span>(ad) <span class="kw">else</span> { <span class="kw">return</span> }                 <span class="cm">// R1: this phone's token only</span>
+    <span class="kw">switch</span> mode {
+    <span class="kw">case</span> .pairing:
+        <span class="fn">collectCandidate</span>(p, rssi: rssi)                        <span class="cm">// 1.5 s window: saved owner first, else strongest</span>
+    <span class="kw">case</span> .reconnecting(<span class="kw">let</span> id):
+        <span class="kw">guard</span> p.identifier == id <span class="kw">else</span> { <span class="kw">return</span> }               <span class="cm">// R6: owner only</span>
+        c.<span class="fn">stopScan</span>()
+        pendingPeripheral = p
+        c.<span class="fn">connect</span>(p, options: <span class="kw">nil</span>)
+    <span class="kw">default</span>:
+        <span class="kw">return</span>                                                 <span class="cm">// R2: idle / owned</span>
+    }
+}
+
+<span class="kw">public func</span> <span class="fn">centralManager</span>(<span class="kw">_</span> c: <span class="ty">CBCentralManager</span>, didConnect p: <span class="ty">CBPeripheral</span>) {
+    <span class="kw">if let</span> id = lockedId, id != p.identifier {                     <span class="cm">// R4</span>
+        c.<span class="fn">cancelPeripheralConnection</span>(p); <span class="kw">return</span>
+    }
+    <span class="kw">guard</span> p == pendingPeripheral <span class="kw">else</span> {
+        c.<span class="fn">cancelPeripheralConnection</span>(p); <span class="kw">return</span>
+    }
+    mode = .owned(p.identifier)
+    <span class="ty">UserDefaults</span>.standard.<span class="fn">set</span>(p.identifier.uuidString, forKey: <span class="st">"ZebraScannerLastDeviceUUID"</span>)
+    ...
+}
+
+<span class="kw">public func</span> <span class="fn">peripheral</span>(<span class="kw">_</span> p: <span class="ty">CBPeripheral</span>, didUpdateValueFor ch: <span class="ty">CBCharacteristic</span>, error: <span class="ty">Error</span>?) {
+    <span class="kw">guard case</span> .owned(<span class="kw">let</span> id) = mode, p.identifier == id <span class="kw">else</span> { <span class="kw">return</span> } <span class="cm">// R5</span>
+    ...
+}
+
+<span class="kw">func</span> <span class="fn">forgetAndDisconnect</span>() {                                          <span class="cm">// R7: Disconnect button</span>
+    <span class="fn">cancelOwnerAndCandidates</span>()
+    centralManager.<span class="fn">stopScan</span>()
+    <span class="ty">UserDefaults</span>.standard.<span class="fn">removeObject</span>(forKey: <span class="st">"ZebraScannerLastDeviceUUID"</span>)
+    phoneToken = <span class="ty">Self</span>.<span class="fn">newRandomToken</span>()                                   <span class="cm">// old scanners never match again</span>
+    mode = .idle
+}</code></pre>
+
+    <h3>بعد از اصلاح: همان صحنه، بدون دزدی</h3>
+    <div class="steps">
+      <div class="step ok"><div class="ic"><span class="no">۱</span><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M20 30V20a12 12 0 0 1 24 0v10" fill="none" stroke="currentColor" stroke-width="4"/><rect x="14" y="30" width="36" height="26" rx="5" fill="none" stroke="currentColor" stroke-width="4"/></svg></div>
+        <div><h4>A مالک است</h4><p>حالت <code>owned(A)</code>. اسکن خاموش است.</p></div></div>
+      <div class="step ok"><div class="ic"><span class="no">۲</span><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" stroke-width="4"/><path d="M16 48L48 16" stroke="currentColor" stroke-width="4"/></svg></div>
+        <div><h4>B نزدیک می‌شود</h4><p>آیفون اصلاً اسکن نمی‌کند، پس B را نمی‌بیند. اگر هم به هر دلیلی رویدادی برسد، R2 و R4 آن را رد می‌کنند.</p></div></div>
+      <div class="step warn"><div class="ic"><span class="no">۳</span><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M50 22a20 20 0 1 0 4 14" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><path d="M52 8v14H38" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div><h4>A قطع می‌شود</h4><p>حالت <code>reconnecting(A)</code>. اسکن با دو فیلتر: identifier باید A باشد و توکن این گوشی در تبلیغ باشد. B حتی اگر توکن این گوشی را داشته باشد، A نیست. نوار وضعیت زرد: «در حال اتصال مجدد به S-07».</p></div></div>
+      <div class="step ok"><div class="ic"><span class="no">۴</span><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M14 34l12 12 24-28" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div><h4>A برمی‌گردد</h4><p>A دوباره تبلیغ می‌کند، هر دو فیلتر قبول می‌شوند و اتصال برقرار می‌شود. دوباره <code>owned(A)</code>. اپراتور هیچ کاری لازم ندارد.</p></div></div>
+      <div class="step"><div class="ic"><span class="no">۵</span><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M12 24h34l-8-8M52 40H18l8 8" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div><h4>اپراتور واقعاً B را می‌خواهد (یا اسکنر اشتباه وصل شده)</h4><p>دکمهٔ Disconnect ← A و توکن فراموش می‌شوند ← توکن جدید و QR4 جدید ← B آن را می‌خواند ← <code>owned(B)</code>. A توکن قدیمی دارد و دیگر مطابقت ندارد. این دزدی نیست، چون اثبات عمدی دارد.</p></div></div>
+    </div>
+  </section>
+
+  <!-- ====================================================== 7 reconnect -->
+  <section class="card" id="reconnect">
+    <h2>۷. اتصال مجدد چطور برقرار می‌شود؟ و «fresh» یعنی چه؟</h2>
+    <p class="lead">پاسخ به دو سؤال: اگر توکن باطل شود، اتصال مجدد چطور کار می‌کند؟ و منظور از اسکنر «fresh» در <code>BLE_Scenarios_Playbook.html</code> چیست؟</p>
+
+    <div class="callout ok">
+      <p class="answer">اتصال مجدد هیچ‌وقت به توکن وابسته نبود.</p>
+      <p>در نسخهٔ قبلی این گزارش (توکن یک‌بارمصرف)، اتصال مجدد فقط با <code>peripheral.identifier</code> انجام می‌شد: <code>retrievePeripherals([A])</code> و بعد <code>connect(A)</code>. پس باطل شدن توکن روی آن اثری نداشت. توکن فقط برای <b>پیدا کردن</b> اسکنر در اتصال اول است. identifier برای <b>برگشتن</b> به همان اسکنر است.</p>
+      <p>حالا که توکن ثابت است، از آن به‌عنوان فیلتر دوم در اتصال مجدد هم استفاده می‌کنیم.</p>
+    </div>
+
+    <h3>دو هویت جدا</h3>
+    <div class="tablewrap"><table>
+      <thead><tr><th>ویژگی</th><th>توکن</th><th><code>peripheral.identifier</code></th></tr></thead>
+      <tbody>
+        <tr><td>چه کسی می‌سازد؟</td><td>اپ، یک بار برای هر نصب</td><td>خود iOS، برای هر اسکنر</td></tr>
+        <tr><td>کجا نگه داشته می‌شود؟</td><td>داخل اسکنر (بعد از خواندن QR4) و <code>UserDefaults</code> گوشی</td><td><code>UserDefaults</code> گوشی (<code>ZebraScannerLastDeviceUUID</code>)</td></tr>
+        <tr><td>چه کسی آن را می‌بیند؟</td><td>همهٔ گوشی‌ها، داخل تبلیغ اسکنر</td><td>فقط همین آیفون؛ آیفون دیگر برای همان اسکنر UUID دیگری دارد</td></tr>
+        <tr><td>به چه سؤالی جواب می‌دهد؟</td><td>«این اسکنر کدام گوشی را مالک می‌داند؟»</td><td>«این دقیقاً کدام اسکنر است؟»</td></tr>
+        <tr><td>کاربرد</td><td>پیدا کردن اسکنر در pairing + فیلتر دوم در اتصال مجدد</td><td>اتصال مجدد به همان اسکنر</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>مسیر اتصال مجدد، گام‌به‌گام</h3>
+    <div class="pipe">
+      <div class="p bad"><b>۱</b>A قطع می‌شود (فاصله، فلز، Sleep). <code>didDisconnectPeripheral</code> ← حالت <code>reconnecting(A)</code>.</div>
+      <div class="arrow">←</div>
+      <div class="p"><b>۲</b>اسکن با فیلتر توکن روشن می‌شود. فقط در foreground، بدون محدودیت زمانی، با اسکن پیوسته (هر ۳۰ ثانیه یک شروع دوباره). جزئیات در <a href="#dormancy">بخش ۸</a>.</div>
+      <div class="arrow">←</div>
+      <div class="p"><b>۳</b>هر تبلیغ دو بار بررسی می‌شود: توکن این گوشی را دارد؟ identifier آن A است؟</div>
+      <div class="arrow">←</div>
+      <div class="p ok"><b>۴</b>هر دو بله ← <code>stopScan</code> و <code>connect(A)</code> ← <code>owned(A)</code>.</div>
+      <div class="arrow">←</div>
+      <div class="p"><b>۵</b>اپ به background رفت یا بلوتوث خاموش شد ← توقف. با برگشت اپ یا روشن شدن بلوتوث دوباره شروع می‌شود. نوار زرد «در انتظار S-07» تا اتصال.</div>
+    </div>
+
+    <div class="tablewrap"><table>
+      <thead><tr><th>دستگاه دیده‌شده در reconnecting(A)</th><th>توکن این گوشی؟</th><th>identifier = A؟</th><th>نتیجه</th></tr></thead>
+      <tbody>
+        <tr><td>A برگشته است</td><td>بله</td><td>بله</td><td><span class="badge b-ok">وصل</span></td></tr>
+        <tr><td>B، که قبلاً با این گوشی جفت شده</td><td>بله</td><td>خیر</td><td><span class="badge b-bad">رد</span> جلوی دزدی B</td></tr>
+        <tr><td>A، ولی در این فاصله QR4 آیفون ۲ را خوانده</td><td>خیر</td><td>بله</td><td><span class="badge b-bad">رد</span> از آیفون ۲ نمی‌دزدیم</td></tr>
+        <tr><td>اسکنر C یا هر دستگاه دیگر</td><td>خیر</td><td>خیر</td><td><span class="badge b-bad">رد</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout">
+      <p><b>چرا دو فیلتر؟</b> فیلتر identifier جلوی دزدی B را می‌گیرد (تعریف شما). فیلتر توکن جلوی برگرداندن اسکنری را می‌گیرد که اپراتور دیگری عمداً با گوشی خودش جفت کرده (سناریو ۱ و ۴ در Playbook). هر دو فقط روی گوشی و اسکنر اجرا می‌شوند.</p>
+      <p><b>اگر تست نشان دهد اسکنرِ آزاد بعد از قطع توکن را تبلیغ نمی‌کند</b> <span class="badge b-warn">بررسی شود</span>: فیلتر توکن حذف می‌شود و اتصال مجدد مستقیم انجام می‌شود: <code>retrievePeripherals([A])</code> + <code>connect(A)</code>. iOS بدون اسکنِ اپ، هر وقت تبلیغ A را بشنود وصل می‌شود. جلوی دزدی B همچنان گرفته می‌شود؛ فقط حفاظت سناریوی دو گوشی از دست می‌رود.</p>
+    </div>
+
+    <h3>«fresh» یعنی چه؟</h3>
+    <div class="callout">
+      <p class="q">معنی در Playbook</p>
+      <p>«fresh» (تازه) در <code>BLE_Scenarios_Playbook.html</code> یعنی اسکنر ذخیره‌شده‌ای که اپ <b>اجازه دارد خودکار</b> دوباره به آن وصل شود. آنجا یک محدودیت زمانی ۳۰ دقیقه‌ای پیشنهاد شده بود: اگر ارتباط بیش از ۳۰ دقیقه قطع بود، اسکنر «کهنه» (stale) می‌شد و اتصال خودکار انجام نمی‌شد.</p>
+    </div>
+    <div class="callout ok">
+      <p class="answer">تصمیم تیم: fresh همیشگی است و زمان ندارد.</p>
+      <p>اسکنر ذخیره‌شده تا وقتی اپراتور Disconnect نزند، معتبر است. اپ هر وقت متصل نیست، خودکار برای اتصال مجدد تلاش می‌کند. اگر اسکنر اشتباهی وصل شد، اپراتور Disconnect می‌زند: اسکنر و توکن فراموش می‌شوند و اتصال بعدی فقط با خواندن QR4 جدید برقرار می‌شود.</p>
+    </div>
+
+    <h4>چرخهٔ عمر اسکنر ذخیره‌شده</h4>
+    <div class="pipe">
+      <div class="p ok"><b>۱</b>اسکنر QR4 را می‌خواند ← <code>owned(A)</code>. identifier و توکن ذخیره‌اند.</div>
+      <div class="arrow">←</div>
+      <div class="p bad"><b>۲</b>قطع (فاصله، Sleep، بستن اپ، خاموشی گوشی، روز بعد).</div>
+      <div class="arrow">←</div>
+      <div class="p"><b>۳</b>هر بار که اپ در foreground است و بلوتوث روشن: <code>reconnecting(A)</code> با دو فیلتر.</div>
+      <div class="arrow">←</div>
+      <div class="p ok"><b>۴</b>A دیده شد ← دوباره <code>owned(A)</code>. بدون هیچ کاری از اپراتور.</div>
+      <div class="arrow">←</div>
+      <div class="p"><b>۵</b>فقط Disconnect این چرخه را تمام می‌کند ← اسکنر و توکن فراموش ← QR4 جدید.</div>
+    </div>
+
+    <div class="tablewrap"><table>
+      <thead><tr><th>موقعیت</th><th>رفتار با fresh همیشگی</th></tr></thead>
+      <tbody>
+        <tr><td>قطع کوتاه (زیر هواپیما، فلز)</td><td>وصل می‌شود به‌محض اینکه A برگردد.</td></tr>
+        <tr><td>فردا، همان گوشی، اسکنر دیروز روشن است</td><td>خودکار وصل می‌شود، اگر A هنوز توکن این گوشی را دارد.</td></tr>
+        <tr><td>فردا، ولی A دیروز QR4 گوشی دیگری را خوانده</td><td>وصل نمی‌شود؛ توکن A مال گوشی دیگر است. مسابقهٔ دو گوشی (سناریو ۴) رخ نمی‌دهد.</td></tr>
+        <tr><td>اسکنرِ وصل‌شده آن اسکنری نیست که اپراتور می‌خواهد</td><td>Disconnect ← QR4 جدید ← اسکنر درست آن را می‌خواند.</td></tr>
+        <tr><td>اپ بسته یا گوشی قفل (iOS)</td><td>اپ suspend می‌شود و تلاشی نمی‌کند. با باز شدن اپ دوباره تلاش شروع می‌شود.</td></tr>
+      </tbody>
+    </table></div>
+
+    <ul>
+      <li><b>وابستگی مهم</b> <span class="badge b-warn">بررسی شود</span>: fresh همیشگی فقط به‌خاطر فیلتر توکن امن است. اگر تست نشان دهد اسکنرِ آزاد توکن را تبلیغ نمی‌کند و اتصال مجدد مستقیم با identifier انجام شود، گوشی دیروز می‌تواند اسکنری را که امروز گوشی دیگری جفت کرده، در لحظهٔ قطع بگیرد (سناریو ۱ و ۴).</li>
+      <li><b>باتری:</b> تلاش بدون محدودیت زمانی است، ولی فقط در foreground. اسکن پیوسته است تا بیدار شدن اسکنر سریع دیده شود. هزینهٔ آن در برابر صفحهٔ همیشه روشن (wakelock) کم است (<a href="#dormancy">بخش ۸</a>).</li>
+      <li><b>بدون اطلاعات کاربر و سرور:</b> فقط identifier، توکن و دکمهٔ Disconnect تصمیم می‌گیرند.</li>
+    </ul>
+  </section>
+
+  <!-- ====================================================== 8 dormancy -->
+  <section class="card" id="dormancy">
+    <h2>۸. خواب اسکنر (Dormancy) و اتصال مجدد</h2>
+    <p class="lead">اسکنر بعد از چند دقیقه بی‌کاری به خواب می‌رود. بعد از بیدار شدن، چطور دوباره به گوشی وصل می‌شود؟ امروز، و بعد از تغییرات.</p>
+
+    <div class="callout ok">
+      <p class="q">اسم درست: reconnect (اتصال مجدد)</p>
+      <p><b>reconnect</b> یعنی دوباره وصل شدن به اسکنری که گوشی قبلاً می‌شناخت. این اصطلاح رایج در BLE است. <b>recover / recovery</b> معنای کلی‌تری دارد («برگشتن به حالت سالم بعد از خرابی») و برای این کار رایج نیست. برای همین اسم حالت در این گزارش از <code>recovering</code> به <code>reconnecting</code> تغییر کرد؛ همان اسمی که در Playbook هم استفاده شده است.</p>
+    </div>
+
+    <h3>تنظیم خواب در اسکنر (طبق دفترچه)</h3>
+    <div class="tablewrap"><table>
+      <thead><tr><th>بارکد</th><th>رفتار</th><th>نکته</th></tr></thead>
+      <tbody>
+        <tr><td><code>%%SpecCode31</code></td><td>خواب بعد از ۱ دقیقه</td><td>مناسب برای تست</td></tr>
+        <tr><td><code>%%SpecCode33</code></td><td>خواب بعد از ۵ دقیقه</td><td>بیدار کردن زیاد</td></tr>
+        <tr><td><code>%%SpecCode34</code></td><td>خواب بعد از ۱۰ دقیقه</td><td></td></tr>
+        <tr><td><code>%%SpecCode35</code></td><td>خواب بعد از ۳۰ دقیقه</td><td><span class="badge b-ok">پیشنهاد اولیه</span></td></tr>
+        <tr><td><code>%%SpecCode36</code></td><td>هرگز نمی‌خوابد</td><td>نگرانی باتری در <code>Phases Overview.md</code></td></tr>
+        <tr><td><code>%%SpecCode38</code></td><td>خواب سریع</td><td></td></tr>
+      </tbody>
+    </table></div>
+    <p>امروز QR «هرگز نمی‌خوابد» در کد هست ولی در sheet غیرفعال است (<code>ble_scanner_settings_bottom_sheet.dart:194</code>) و روی کارت کاغذی هم نیست. QR1 (ریست) تنظیم خواب را به مقدار پیش‌فرض برمی‌گرداند؛ مقدار پیش‌فرض در دفترچه نوشته نشده است. <span class="badge b-warn">بررسی شود</span></p>
+
+    <h3>امروز (کد فعلی)</h3>
+    <div class="grid2">
+      <div class="tile">
+        <h4><span class="badge b-ok">Android</span></h4>
+        <ol>
+          <li>اسکنر می‌خوابد ← ارتباط قطع ← <code>onDisconnected</code>. اپ آن را «قطع ناخواسته» می‌داند.</li>
+          <li>اپ فوراً و بعد هر ۵ ثانیه <code>connectToLastDevice()</code> را صدا می‌زند (<code>my_app.dart:55</code>)، بدون پایان. هر بار یک اتصال GATT جدید ساخته می‌شود و ممکن است روی هم جمع شوند.</li>
+          <li>اپراتور ماشه را می‌زند ← اسکنر بیدار می‌شود و تبلیغ می‌کند ← یکی از تلاش‌ها وصل می‌شود. حتی وقتی اپ در پس‌زمینه است (اگر سیستم آن را نبسته باشد).</li>
+        </ol>
+      </div>
+      <div class="tile">
+        <h4><span class="badge b-acc">iOS</span></h4>
+        <ol>
+          <li><code>didDisconnectPeripheral</code> ← همان تایمر ۵ ثانیه‌ای.</li>
+          <li>هر بار <code>connect</code> با ۵ ثانیه timeout. بین دو تلاش ممکن است لحظه‌هایی هیچ تلاشی فعال نباشد.</li>
+          <li>بیدار شدن ← تلاش بعدی وصل می‌شود؛ <b>فقط اگر اپ باز باشد</b>. اگر آیفون قفل باشد، تا باز شدن اپ وصل نمی‌شود.</li>
+        </ol>
+      </div>
+    </div>
+    <div class="callout warn"><p><b>مشکل امروز در هر دو:</b> هیچ فیلتر توکنی نیست. هر گوشی‌ای که MAC یا UUID این اسکنر را ذخیره دارد، در لحظهٔ بیدار شدن می‌تواند آن را بگیرد (مسابقهٔ سناریو ۴).</p></div>
+
+    <h3>بعد از تغییرات</h3>
+    <div class="pipe">
+      <div class="p bad"><b>۱</b>اسکنر می‌خوابد ← قطع ← <code>reconnecting(A)</code>. نوار زرد: «S-07 در خواب است یا دور است».</div>
+      <div class="arrow">←</div>
+      <div class="p"><b>۲</b>تا وقتی اپ باز است: اسکن پیوسته با فیلتر توکن.</div>
+      <div class="arrow">←</div>
+      <div class="p"><b>۳</b>اپراتور ماشه را می‌زند ← اسکنر بیدار می‌شود و با توکن این گوشی تبلیغ می‌کند.</div>
+      <div class="arrow">←</div>
+      <div class="p ok"><b>۴</b>توکن درست + identifier = A ← <code>connect</code> ← <code>owned(A)</code>.</div>
+      <div class="arrow">←</div>
+      <div class="p ok"><b>۵</b>بوق «آماده» و LED آبی روی اسکنر، نوار سبز و لرزش گوشی ← اپراتور اسکن می‌کند.</div>
+    </div>
+    <p>بدون QR، بدون Disconnect، و بدون محدودیت زمانی (fresh همیشگی): حتی بعد از یک استراحت طولانی. توکن یک تنظیم ذخیره‌شده در اسکنر است و با خواب پاک نمی‌شود. <span class="badge b-warn">بررسی شود</span></p>
+
+    <div class="tablewrap"><table>
+      <thead><tr><th>وقتی اسکنر A بیدار می‌شود</th><th>امروز</th><th>بعد از تغییرات</th></tr></thead>
+      <tbody>
+        <tr><td>گوشی صاحب A، اپ باز</td><td>وصل، با تأخیر تا ۵ ثانیه + زمان اتصال</td><td><span class="badge b-ok">وصل، معمولاً ۱ تا ۳ ثانیه</span> (اندازه‌گیری شود)</td></tr>
+        <tr><td>آیفون صاحب A، قفل</td><td>تا باز شدن اپ وصل نمی‌شود</td><td>همان؛ با باز شدن اپ فوراً</td></tr>
+        <tr><td>گوشی دیگری که A را قبلاً داشته، اپ باز</td><td><span class="badge b-bad">ممکن است برنده شود</span></td><td><span class="badge b-ok">رد؛ توکن مال آن گوشی نیست</span></td></tr>
+        <tr><td>اسکنر B هم‌زمان بیدار شد</td><td>—</td><td><span class="badge b-ok">رد؛ identifier آن A نیست</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="callout bad">
+      <p class="q">اصلاح پیشنهاد قبلی: اسکن پیوسته به‌جای چرخه‌ای</p>
+      <p>در نسخهٔ ۳ پیشنهاد شده بود اسکن چرخه‌ای باشد (۱۰ ثانیه روشن، ۲۰ ثانیه خاموش). برای بیدار شدن اسکنر بد است: اپراتور ماشه را می‌زند و ممکن است تا ۲۰ ثانیه منتظر بماند. پیشنهاد جدید:</p>
+      <ul>
+        <li><b>اسکن پیوسته</b> در حالت <code>reconnecting</code>، فقط وقتی اپ در foreground است. صفحه به‌خاطر wakelock همیشه روشن است و مصرف آن خیلی بیشتر از اسکن بلوتوث است.</li>
+        <li><b>iOS:</b> هر ۳۰ ثانیه یک بار اسکن را دوباره شروع کنید تا iOS دستگاهی را که قبلاً دیده دوباره گزارش کند.</li>
+        <li><b>Android:</b> سیستم بیش از ۵ بار شروع اسکن در ۳۰ ثانیه را بی‌صدا رد می‌کند؛ پس شروع دوباره هم هر ۳۰ ثانیه. با <code>ScanFilter</code> روی داده‌های تبلیغ، اسکن با صفحهٔ خاموش هم مجاز است.</li>
+      </ul>
+    </div>
+
+    <div class="callout warn">
+      <p class="q">ریسک: اولین اسکن بعد از بیدار شدن</p>
+      <p>اگر فشار ماشه برای بیدار کردن، هم‌زمان یک بارکد هم بخواند، آن بارکد از دست می‌رود، چون هنوز اتصالی نیست. در Normal Mode اسکنر سه بوق بم می‌زند. <span class="badge b-warn">بررسی شود</span></p>
+      <p><b>قانون برای اپراتور:</b> «ماشه را بزنید، منتظر بوق آماده بمانید، بعد اسکن کنید.» اپ بعد از هر اتصال مجدد بوق و LED آماده را می‌فرستد (<code>setBuzzer</code> + <code>setLed</code>).</p>
+    </div>
+
+    <h3>کدام تنظیم خواب؟</h3>
+    <div class="tablewrap"><table>
+      <thead><tr><th>تنظیم</th><th>باتری اسکنر</th><th>تجربهٔ اپراتور</th></tr></thead>
+      <tbody>
+        <tr><td>۵ دقیقه</td><td>خوب</td><td>بیدار کردن زیاد؛ هر بار چند ثانیه انتظار</td></tr>
+        <tr><td>۳۰ دقیقه</td><td>متوسط</td><td><span class="badge b-ok">تعادل خوب</span>؛ فقط بعد از استراحت بیدار کردن لازم است</td></tr>
+        <tr><td>هرگز</td><td>بد؛ ممکن است قبل از پایان شیفت تمام شود</td><td>بدون انتظار</td></tr>
+      </tbody>
+    </table></div>
+    <p>چون اتصال مجدد بعد از تغییرات خودکار و سریع است، دیگر لازم نیست خواب را خاموش کنیم. پیشنهاد اولیه: <code>%%SpecCode35</code> (۳۰ دقیقه) روی کارت کاغذی، بعد از QR3. مقدار نهایی بعد از تست باتری یک شیفت کامل.</p>
+
+    <h3>تست‌های خواب</h3>
+    <div class="tablewrap"><table>
+      <thead><tr><th>کد</th><th>مراحل</th><th>انتظار بعد از تغییرات</th></tr></thead>
+      <tbody>
+        <tr><td>D-1</td><td>خواب را روی ۱ دقیقه بگذارید (<code>%%SpecCode31</code>). وصل کنید، ۲ دقیقه صبر کنید، ماشه را بزنید. زمان تا نوار سبز را اندازه بگیرید.</td><td>کمتر از ۳ ثانیه، در Android و iOS</td></tr>
+        <tr><td>D-2</td><td>مثل D-1، ولی گوشی در زمان خواب قفل است. بعد از بیدار کردن اسکنر، گوشی را باز کنید.</td><td>با باز شدن اپ فوراً وصل می‌شود</td></tr>
+        <tr><td>D-3</td><td>هنگام بیدار کردن، اسکنر را روی یک بارکد بگیرید.</td><td>ثبت کنید: بارکد خوانده شد؟ از دست رفت؟ چه بوقی؟</td></tr>
+        <tr><td>D-4</td><td>گوشی ۲ دیروز A را داشت. امروز A با گوشی ۱ جفت است. A بخوابد؛ هر دو اپ باز؛ A را بیدار کنید.</td><td>فقط گوشی ۱</td></tr>
+        <tr><td>D-5</td><td>A و B هر دو کنار گوشی بخوابند، بعد هر دو بیدار شوند.</td><td>فقط A</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <!-- ====================================================== 8 -->
+  <section class="card" id="code">
+    <h2>۹. تغییرات کد</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>محل</th><th>تغییر</th></tr></thead>
+      <tbody>
+        <tr><td><code>ZebraScannerPlugin.swift:58-66</code></td><td><code>autoConnectBle</code>: خواندن توکن (ساخت در اولین اجرا و بعد از هر Disconnect، ذخیره در <code>UserDefaults</code>) و برگرداندن <code>%%SpecCodeBA44</code> + mode + توکن به‌جای متن. ورود به <code>pairing</code> با <code>AllowDuplicates</code> و timeout ۶۰ ثانیه.</td></tr>
+        <tr><td><code>:211-226</code></td><td><code>didDiscover</code>: گارد حالت + بررسی توکن به‌جای نام و RSSI. RSSI فقط برای مرتب‌سازی کاندیداها.</td></tr>
+        <tr><td><code>:71-95</code></td><td><code>connectToLastDevice</code>: ورود به <code>reconnecting</code> (اسکن با فیلتر توکن + identifier)، بدون بازنویسی مالک، بدون timeout ۵ ثانیه، بدون بازنویسی <code>pendingConnectResult</code> (در صورت درخواست تکراری همان نتیجه).</td></tr>
+        <tr><td><code>:228-246</code></td><td><code>didConnect</code>: قوانین R3 و R4.</td></tr>
+        <tr><td><code>:257-265</code></td><td><code>didDisconnectPeripheral</code>: اگر مالک بود ← <code>reconnecting</code>؛ در غیر این صورت فقط پاک‌سازی.</td></tr>
+        <tr><td><code>:302</code></td><td><code>didUpdateValueFor</code>: قانون R5.</td></tr>
+        <tr><td><code>:145-148</code></td><td><code>disconnect</code> + متد جدید <code>forgetLastDevice</code> و <code>cancelPairing</code>: قانون R7.</td></tr>
+        <tr><td><code>ble_scanner_settings_bottom_sheet.dart</code></td><td>در <code>dispose</code> صفحه/‌sheet، <code>cancelPairing()</code> صدا زده شود. نمایش QR4 فقط وقتی متصل نیستیم. دکمهٔ Disconnect متد <code>forgetAndDisconnect()</code> را صدا بزند تا QR4 جدید ساخته شود.</td></tr>
+        <tr><td>پلاگین (جدید)</td><td><code>forgetAndDisconnect()</code>: پاک کردن identifier و توکن، ساخت توکن جدید. پنجرهٔ ۱٫۵ ثانیه‌ای با اولویت مالک. اسکن پیوسته در <code>reconnecting</code> (فقط foreground)، بدون محدودیت زمانی، با شروع دوباره هر ۳۰ ثانیه.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <!-- ====================================================== 8 -->
+  <section class="card" id="tests">
+    <h2>۱۰. تست‌ها (آیفون + ۲ اسکنر)</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>کد</th><th>مراحل</th><th>کد فعلی (انتظار)</th><th>بعد از اصلاح</th></tr></thead>
+      <tbody>
+        <tr><td>iOS-1</td><td>sheet را باز کنید تا QR4 دیده شود. بگذارید A از مسیر تایمر وصل شود. بعد B را کنار گوشی روشن کنید.</td><td><span class="badge b-bad">B وصل می‌شود</span></td><td><span class="badge b-ok">A می‌ماند</span></td></tr>
+        <tr><td>iOS-2</td><td>بعد از iOS-1، با A یک بارکد بخوانید.</td><td><span class="badge b-bad">بارکد می‌رسد (شبح)</span></td><td><span class="badge b-ok">A قطع است / نادیده</span></td></tr>
+        <tr><td>iOS-3</td><td>بعد از iOS-1، Disconnect بزنید. با گوشی دوم ببینید A تبلیغ می‌کند یا نه.</td><td><span class="badge b-bad">A دیده نمی‌شود</span></td><td><span class="badge b-ok">A آزاد است</span></td></tr>
+        <tr><td>iOS-4</td><td>A در دست (۲۰ سانتی‌متر)، B روی میز (۵۰ سانتی‌متر). QR4 را با A بخوانید. ۲۰ بار.</td><td><span class="badge b-warn">گاهی B</span></td><td><span class="badge b-ok">۲۰ از ۲۰ A</span></td></tr>
+        <tr><td>iOS-5</td><td>با nRF Connect روی گوشی دوم یک advertiser با نام <code>TestPortable</code> بسازید. QR4 را باز کنید و اسکن نکنید.</td><td><span class="badge b-bad">به TestPortable وصل می‌شود</span></td><td><span class="badge b-ok">هیچ اتصالی</span></td></tr>
+        <tr><td>iOS-6</td><td>sheet را بدون اتصال ببندید. ۱۰ دقیقه بعد B را کنار گوشی روشن کنید.</td><td><span class="badge b-bad">B وصل می‌شود</span></td><td><span class="badge b-ok">هیچ اتصالی</span></td></tr>
+        <tr><td>iOS-7</td><td>A متصل. A را ۳۰ ثانیه در جعبهٔ فلزی بگذارید، B کنار گوشی روشن است، sheet را باز کنید.</td><td><span class="badge b-warn">B یا A</span></td><td><span class="badge b-ok">فقط A برمی‌گردد</span></td></tr>
+        <tr><td>iOS-8</td><td>B دیروز با این آیفون جفت شده و روشن است. QR4 را باز کنید و اسکن نکنید.</td><td><span class="badge b-warn">B احتمالاً وصل می‌شود</span></td><td><span class="badge b-warn">B وصل می‌شود اگر بعد از آخرین Disconnect جفت شده؛ اشتباه بود ← Disconnect</span></td></tr>
+        <tr><td>iOS-9</td><td>Disconnect و خواندن QR4 جدید با B.</td><td>—</td><td><span class="badge b-ok">B مالک، A آزاد</span></td></tr>
+        <tr><td>iOS-10</td><td>S-07 مالک بود و قطع شد. بدون Disconnect، QR4 را با S-12 هم بخوانید. هر دو روشن و نزدیک.</td><td>—</td><td><span class="badge b-ok">S-07 (اولویت مالک)</span></td></tr>
+        <tr><td>iOS-11</td><td>A متصل. Disconnect. A روشن و نزدیک می‌ماند. QR4 جدید را با B بخوانید.</td><td>—</td><td><span class="badge b-ok">فقط B (A توکن قدیمی دارد)</span></td></tr>
+        <tr><td>iOS-12</td><td>A به آیفون ۱ متصل. A را در جعبهٔ فلزی بگذارید. در همین فاصله QR4 آیفون ۲ را با A بخوانید.</td><td>—</td><td><span class="badge b-ok">آیفون ۱ دوباره وصل نمی‌شود</span></td></tr>
+        <tr><td>iOS-13</td><td>A وصل بود. اپ را ببندید. فردا A را روشن کنید و اپ را باز کنید.</td><td>—</td><td><span class="badge b-ok">خودکار وصل می‌شود (fresh همیشگی)</span></td></tr>
+        <tr><td>iOS-14</td><td>آیفون ۱ و ۲ هر دو A را ذخیره دارند؛ آخرین QR4 که A خوانده مال آیفون ۲ است. فردا هر دو اپ باز، A روشن.</td><td>—</td><td><span class="badge b-ok">فقط آیفون ۲ وصل می‌شود</span></td></tr>
+        <tr><td>iOS-15</td><td>A را به گوشی ۱ وصل کنید. روی گوشی ۲ با nRF Connect اسکن کنید.</td><td>—</td><td><span class="badge b-info">ثبت کنید: A دیده می‌شود؟ Connectable است؟</span></td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <!-- ====================================================== 9 -->
+  <section class="card" id="open">
+    <h2>۱۱. موارد نیازمند بررسی</h2>
+    <ul>
+      <li>با nRF Connect: بعد از خواندن <code>%%SpecCodeBA44…</code>، توکن در کدام بخش تبلیغ دیده می‌شود (service data <code>FD05</code>، manufacturer data، یا نام)؟ iOS در حالت foreground به هر دو دسترسی دارد.</li>
+      <li>معنی بایت mode (<code>03</code>) در QR4 اندروید. آیا برای iOS مقدار دیگری لازم است؟</li>
+      <li>آیا اسکنر بعد از Disconnect و بعد از خاموش و روشن شدن، توکن را نگه می‌دارد؟</li>
+      <li>آیا اسکنرِ متصل به یک گوشی همچنان تبلیغ می‌کند، و اگر بله، Connectable است؟ (تست iOS-15)</li>
+      <li>تنظیم خواب پیش‌فرض بعد از ریست (QR1) چیست؟</li>
+      <li>آیا فشار ماشه برای بیدار کردن، یک بارکد هم می‌خواند؟ (تست D-3)</li>
+      <li>آیا اسکنر هنگام اتصال BLE بوق می‌زند؟ (برای تأیید فیزیکی بعد از اتصال مهم است.)</li>
+      <li>آیا <code>peripheral.identifier</code> اسکنر ثابت می‌ماند (اسکنر آدرس BLE خود را عوض نمی‌کند)؟ اتصال مجدد به آن وابسته است.</li>
+      <li>نام تبلیغی دقیق اسکنر در iOS (مثلاً «… BLE»). برای فیلتر کمکی، نه برای هویت.</li>
+    </ul>
+  </section>
+  </main>
+</div>
+
+<footer>منابع: <code>zebra_handheld_scanner</code> 0.0.13 (<code>ZebraScannerPlugin.swift</code>، <code>ZebraScannerPlugin.kt</code>)، <code>lib/widgets/bottom_sheets/ble_scanner_settings_bottom_sheet.dart</code>، <code>lib/my_app.dart</code>، <code>BLE/Phases Overview.md</code>، <code>BLE/Combined_QR_Test</code>. اعداد RSSI و فاصله‌ها نمونه و تقریبی هستند.</footer>
+
+<script>
+(function(){
+  var root=document.documentElement, btn=document.getElementById('themeToggle'), key='ios-identity-theme';
+  try{var s=localStorage.getItem(key); if(s){root.setAttribute('data-theme',s);}}catch(e){}
+  btn.addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme');
+    var dark=cur?cur==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var next=dark?'light':'dark';
+    root.setAttribute('data-theme',next);
+    try{localStorage.setItem(key,next);}catch(e){}
+  });
+})();
+</script>
+</body>
+</html>

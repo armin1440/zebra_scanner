@@ -1,5 +1,6 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
+import 'src/connection_state.dart';
 import 'zebra_handheld_scanner_method_channel.dart';
 
 abstract class ZebraHandheldScannerPlatform extends PlatformInterface {
@@ -8,7 +9,8 @@ abstract class ZebraHandheldScannerPlatform extends PlatformInterface {
 
   static final Object _token = Object();
 
-  static ZebraHandheldScannerPlatform _instance = MethodChannelZebraHandheldScanner();
+  static ZebraHandheldScannerPlatform _instance =
+      MethodChannelZebraHandheldScanner();
 
   /// The default instance of [ZebraHandheldScannerPlatform] to use.
   ///
@@ -31,35 +33,50 @@ abstract class ZebraHandheldScannerPlatform extends PlatformInterface {
     throw UnimplementedError('requestPermissions() has not been implemented.');
   }
 
-  Future<String> autoConnectBle() {
-    throw UnimplementedError('autoConnectBle() has not been implemented.');
+  Future<String> startPairing({Duration? timeout}) {
+    throw UnimplementedError('startPairing() has not been implemented.');
   }
 
-  Future<bool> connectToLastDevice() {
-    throw UnimplementedError('connectToLastDevice() has not been implemented.');
+  Future<void> cancelPairing() {
+    throw UnimplementedError('cancelPairing() has not been implemented.');
   }
 
-  Future<void> sendCommand(String command) {
-    throw UnimplementedError('sendCommand() has not been implemented.');
+  Future<bool> reconnect({
+    bool requireToken = false,
+    Duration timeout = const Duration(seconds: 5),
+  }) {
+    throw UnimplementedError('reconnect() has not been implemented.');
   }
 
-  Future<String?> getDeviceName() {
-    throw UnimplementedError('getDeviceName() has not been implemented.');
+  Future<void> sendRawCommand(String command) {
+    throw UnimplementedError('sendRawCommand() has not been implemented.');
   }
 
-  Future<String?> getVersion() {
-    throw UnimplementedError('getVersion() has not been implemented.');
+  Future<String?> getBluetoothName() {
+    throw UnimplementedError('getBluetoothName() has not been implemented.');
+  }
+
+  Future<String?> getFirmwareVersion() {
+    throw UnimplementedError('getFirmwareVersion() has not been implemented.');
   }
 
   Future<int?> getBatteryLevel() {
     throw UnimplementedError('getBatteryLevel() has not been implemented.');
   }
 
-  Future<void> setDeviceName(String name) {
-    throw UnimplementedError('setDeviceName() has not been implemented.');
+  Future<void> setBluetoothName(String name) {
+    throw UnimplementedError('setBluetoothName() has not been implemented.');
   }
 
   Future<void> disconnect() {
     throw UnimplementedError('disconnect() has not been implemented.');
+  }
+
+  Future<void> forgetScanner() {
+    throw UnimplementedError('forgetScanner() has not been implemented.');
+  }
+
+  Future<ScannerConnectionState> getConnectionState() {
+    throw UnimplementedError('getConnectionState() has not been implemented.');
   }
 }

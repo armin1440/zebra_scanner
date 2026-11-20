@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'src/connection_state.dart';
 import 'zebra_handheld_scanner_platform_interface.dart';
 
 /// An implementation of [ZebraHandheldScannerPlatform] that uses method channels.
@@ -24,33 +25,45 @@ class MethodChannelZebraHandheldScanner extends ZebraHandheldScannerPlatform {
   }
 
   @override
-  Future<String> autoConnectBle() async {
-    final result = await methodChannel.invokeMethod<String>('autoConnectBle');
+  Future<String> startPairing({Duration? timeout}) async {
+    final result = await methodChannel.invokeMethod<String>('startPairing', {
+      if (timeout != null) 'timeoutMs': timeout.inMilliseconds,
+    });
     return result ?? '';
   }
 
   @override
-  Future<bool> connectToLastDevice() async {
-    final result = await methodChannel.invokeMethod<bool>('connectToLastDevice');
+  Future<void> cancelPairing() async {
+    await methodChannel.invokeMethod<void>('cancelPairing');
+  }
+
+  @override
+  Future<bool> reconnect({
+    bool requireToken = false,
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    final result = await methodChannel.invokeMethod<bool>('reconnect', {
+      'requireToken': requireToken,
+      'timeoutMs': timeout.inMilliseconds,
+    });
     return result ?? false;
   }
 
   @override
-  Future<void> sendCommand(String command) async {
-    await methodChannel.invokeMethod<void>(
-      'sendCommand',
-      {'command': command},
-    );
+  Future<void> sendRawCommand(String command) async {
+    await methodChannel.invokeMethod<void>('sendRawCommand', {
+      'command': command,
+    });
   }
 
   @override
-  Future<String?> getDeviceName() async {
-    return await methodChannel.invokeMethod<String>('getDeviceName');
+  Future<String?> getBluetoothName() async {
+    return await methodChannel.invokeMethod<String>('getBluetoothName');
   }
 
   @override
-  Future<String?> getVersion() async {
-    return await methodChannel.invokeMethod<String>('getVersion');
+  Future<String?> getFirmwareVersion() async {
+    return await methodChannel.invokeMethod<String>('getFirmwareVersion');
   }
 
   @override
@@ -59,12 +72,25 @@ class MethodChannelZebraHandheldScanner extends ZebraHandheldScannerPlatform {
   }
 
   @override
-  Future<void> setDeviceName(String name) async {
-    await methodChannel.invokeMethod<void>('setDeviceName', {'name': name});
+  Future<void> setBluetoothName(String name) async {
+    await methodChannel.invokeMethod<void>('setBluetoothName', {'name': name});
   }
 
   @override
   Future<void> disconnect() async {
     await methodChannel.invokeMethod<void>('disconnect');
+  }
+
+  @override
+  Future<void> forgetScanner() async {
+    await methodChannel.invokeMethod<void>('forgetScanner');
+  }
+
+  @override
+  Future<ScannerConnectionState> getConnectionState() async {
+    final state = await methodChannel.invokeMethod<String>(
+      'getConnectionState',
+    );
+    return ScannerConnectionState.fromName(state);
   }
 }

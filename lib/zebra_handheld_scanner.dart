@@ -1,8 +1,18 @@
-import 'zebra_handheld_scanner_platform_interface.dart';
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 
-/// Predefined buzzer sound types for the scanner
-enum BuzzerType {
+import 'src/config_barcode.dart';
+import 'src/connection_state.dart';
+import 'src/scanner_setting.dart';
+import 'zebra_handheld_scanner_platform_interface.dart';
+
+export 'src/config_barcode.dart';
+export 'src/connection_state.dart';
+export 'src/scanner_setting.dart';
+
+/// Predefined buzzer sounds of the scanner.
+enum BuzzerSound {
   normalScan('02'),
   settingCode('04'),
   errorAlert('06'),
@@ -14,20 +24,20 @@ enum BuzzerType {
   invalidSettingCode('11');
 
   final String hexCode;
-  const BuzzerType(this.hexCode);
+  const BuzzerSound(this.hexCode);
 }
 
-/// Predefined vibration feedback types for the scanner
-enum VibratorType {
+/// Predefined vibration lengths of the scanner.
+enum VibrationLength {
   short('01'),
   medium('02'),
   long('03');
 
   final String hexCode;
-  const VibratorType(this.hexCode);
+  const VibrationLength(this.hexCode);
 }
 
-/// Predefined LED color configurations for the scanner
+/// Predefined LED colors of the scanner.
 enum LedColor {
   red('01'),
   green('02'),
@@ -52,31 +62,76 @@ class ZebraHandheldScanner {
     return ZebraHandheldScannerPlatform.instance.requestPermissions();
   }
 
-  /// Initiates BLE auto-connection and returns a QR code string.
-  /// Listen to the 'zebra_handheld_scanner' method channel for connection events.
-  Future<String> autoConnectBle() {
-    return ZebraHandheldScannerPlatform.instance.autoConnectBle();
+  /// Starts BLE pairing and returns the content of the pairing QR code.
+  ///
+  /// Show the returned value as a QR code. The scanner that reads it connects
+  /// to this phone. Listen to [setListeners] for connection events.
+  ///
+  /// * Android: the vendor SDK creates the code (`%%SpecCodeBA4403<id>`).
+  /// * iOS: the code is `%%SpecCodeBA4403<token>`. The token is 4 random bytes
+  ///   kept until [forgetScanner]. iOS connects only to a scanner that
+  ///   advertises this token (service data `FD05` or manufacturer data
+  ///   `0x0133`), the same identity check as the Android SDK.
+  ///
+  /// While pairing, a scanner that is already connected stays connected
+  /// until a different scanner reads the code.
+  ///
+  /// [timeout] (iOS only, default 60 seconds) stops the pairing scan.
+  /// Call this method again to restart it.
+  Future<String> startPairing({Duration? timeout}) {
+    return ZebraHandheldScannerPlatform.instance.startPairing(timeout: timeout);
   }
 
-  /// Attempts to reconnect to the last successfully connected BLE device.
-  /// Returns [true] if connection starts and succeeds.
-  Future<bool> connectToLastDevice() {
-    return ZebraHandheldScannerPlatform.instance.connectToLastDevice();
+  /// Stops pairing (for example when the pairing screen closes).
+  /// A connected scanner stays connected.
+  Future<void> cancelPairing() {
+    return ZebraHandheldScannerPlatform.instance.cancelPairing();
   }
 
-  /// Sends an arbitrary hex command string (e.g. "ba0515") to the connected scanner.
-  Future<void> sendCommand(String command) {
-    return ZebraHandheldScannerPlatform.instance.sendCommand(command);
+  /// Starts reconnection to the saved scanner, and only to that scanner.
+  ///
+  /// Returns `true` when the scanner is connected within [timeout].
+  /// Returns `false` when no scanner is saved, Bluetooth is off, or the
+  /// timeout expires. After a timeout, the plugin keeps trying in the
+  /// background (state [ScannerConnectionState.reconnecting]) until the
+  /// scanner connects or you call [disconnect] or [forgetScanner].
+  /// Calling this method again does not start a second connection.
+  ///
+  /// [requireToken] (iOS only): reconnect only when the saved scanner also
+  /// advertises the pairing token of this phone. This stops a phone from
+  /// taking back a scanner that another phone paired with. Use it only if
+  /// your scanner keeps advertising the token after pairing. The Effon
+  /// scanner advertises the token only in pairing mode, so with this option
+  /// it reconnects only after it reads the pairing QR code again.
+  Future<bool> reconnect({
+    bool requireToken = false,
+    Duration timeout = const Duration(seconds: 5),
+  }) {
+    return ZebraHandheldScannerPlatform.instance.reconnect(
+      requireToken: requireToken,
+      timeout: timeout,
+    );
   }
 
-  /// Gets the device name of the connected scanner.
-  Future<String?> getDeviceName() {
-    return ZebraHandheldScannerPlatform.instance.getDeviceName();
+  /// Returns the current connection state.
+  Future<ScannerConnectionState> getConnectionState() {
+    return ZebraHandheldScannerPlatform.instance.getConnectionState();
   }
 
-  /// Gets the version of the connected scanner.
-  Future<String?> getVersion() {
-    return ZebraHandheldScannerPlatform.instance.getVersion();
+  /// Sends raw bytes, written as a hex string (for example `ba0702`), to the
+  /// connected scanner.
+  Future<void> sendRawCommand(String command) {
+    return ZebraHandheldScannerPlatform.instance.sendRawCommand(command);
+  }
+
+  /// Gets the Bluetooth name of the connected scanner.
+  Future<String?> getBluetoothName() {
+    return ZebraHandheldScannerPlatform.instance.getBluetoothName();
+  }
+
+  /// Gets the firmware version of the connected scanner.
+  Future<String?> getFirmwareVersion() {
+    return ZebraHandheldScannerPlatform.instance.getFirmwareVersion();
   }
 
   /// Gets the battery level (0-100) of the connected scanner.
@@ -84,65 +139,180 @@ class ZebraHandheldScanner {
     return ZebraHandheldScannerPlatform.instance.getBatteryLevel();
   }
 
-  /// Sets a new device name for the connected scanner.
-  Future<void> setDeviceName(String name) {
-    return ZebraHandheldScannerPlatform.instance.setDeviceName(name);
+  /// Sets a new Bluetooth name for the connected scanner (16 bytes maximum).
+  ///
+  /// The plugin sends `%%SpecCodeEC` and then the name, like the vendor SDK.
+  /// The scanner adds the protocol suffix (for example `ScannerBLE`).
+  Future<void> setBluetoothName(String name) {
+    return ZebraHandheldScannerPlatform.instance.setBluetoothName(name);
   }
 
-  /// Disconnects from the current scanner.
+  /// Disconnects from the current scanner and stops pairing and reconnection.
+  /// The saved scanner and the pairing token are kept, so
+  /// [reconnect] can reconnect later.
   Future<void> disconnect() {
     return ZebraHandheldScannerPlatform.instance.disconnect();
   }
 
-  /// Sets the scanner's speaker buzzer sound type (OP_SET_SPEAKER: 0x07).
-  Future<void> setBuzzer(BuzzerType type) {
-    return sendCommand('ba07${type.hexCode}');
+  /// Disconnects from the scanner and forgets it.
+  ///
+  /// The plugin also creates a new pairing token, so scanners that read the
+  /// old pairing QR code can never connect again. Call [startPairing] to
+  /// get the new QR code.
+  ///
+  /// Android: the new SDK id is used immediately when possible. Otherwise it
+  /// is used after the next app start.
+  Future<void> forgetScanner() {
+    return ZebraHandheldScannerPlatform.instance.forgetScanner();
   }
 
-  /// Sets the scanner's vibration feedback (OP_SET_VIBRATOR: 0x08).
-  Future<void> setVibrator(VibratorType type) {
-    return sendCommand('ba08${type.hexCode}');
+  /// Plays a buzzer sound on the scanner (OP_SET_SPEAKER: 0x07).
+  Future<void> beep(BuzzerSound sound) {
+    return sendRawCommand('ba07${sound.hexCode}');
   }
 
-  /// Sets the scanner's LED color, duration, and blink count (OP_SET_LED: 0x0B).
-  /// [durationMs] must be in milliseconds (e.g., 500ms = 10 units of 50ms). Max is 255 units (12750ms).
-  /// [blinkCount] is the number of blinks (0 to 255).
-  Future<void> setLed(
+  /// Vibrates the scanner (OP_SET_VIBRATOR: 0x08).
+  Future<void> vibrate(VibrationLength length) {
+    return sendRawCommand('ba08${length.hexCode}');
+  }
+
+  /// Flashes the scanner LED (OP_SET_LED: 0x0B).
+  ///
+  /// [duration] is sent in units of 50 ms, from 0 to 12750 ms.
+  /// [blinkCount] is the number of blinks, from 0 to 255.
+  Future<void> flashLed(
     LedColor color, {
-    int durationMs = 500,
+    Duration duration = const Duration(milliseconds: 500),
     int blinkCount = 1,
   }) {
-    int durationUnits = (durationMs / 50).round().clamp(0, 255);
+    int durationUnits = (duration.inMilliseconds / 50).round().clamp(0, 255);
     int blinks = blinkCount.clamp(0, 255);
     String durHex = durationUnits.toRadixString(16).padLeft(2, '0');
     String blinkHex = blinks.toRadixString(16).padLeft(2, '0');
-    return sendCommand('ba0b${color.hexCode}$durHex$blinkHex');
+    return sendRawCommand('ba0b${color.hexCode}$durHex$blinkHex');
   }
 
-  /// Sends a specific setting configuration code to the scanner (OP_SPEC_CODE: 0x05).
-  /// Automatically strips '%%SpecCode' if it is passed in, as the scanner
-  /// expects just the underlying text encoded as ASCII bytes.
+  /// Sends one configuration code over BLE (OP_SPEC_CODE: `BA 05 <data>`).
+  ///
+  /// [code] is the barcode content with or without `%%SpecCode`, for example
+  /// `%%SpecCode97` or `97` (High Volume). The code is hexadecimal and is sent
+  /// as raw bytes: `97` becomes `BA 05 97`, `BA1C01` becomes `BA 05 BA 1C 01`.
+  ///
+  /// Only one code per call (vendor limit). Throws [ArgumentError] if [code]
+  /// contains `|`, is not hexadecimal, or is longer than 18 bytes.
+  /// Use [sendSettings] to send several codes, or [sendVirtualScan] to
+  /// send a combined barcode.
   Future<void> sendSpecCode(String code) {
-    final cleanCode = code.replaceFirst('%%SpecCode', '');
-    final hexData = cleanCode.codeUnits
-        .map((c) => c.toRadixString(16).padLeft(2, '0'))
-        .join('');
-    return sendCommand('ba05$hexData');
+    return sendRawCommand(specCodeCommand(code));
   }
 
-  /// Sends a scan head control command (OP_CMD_TO_LASER: 0x06).
-  Future<void> sendLaserCommand(String command) {
+  /// Returns the hex command that [sendSpecCode] sends for [code].
+  static String specCodeCommand(String code) {
+    final clean = ScannerConfigBarcode.stripPrefix(code);
+    if (clean.isEmpty) {
+      throw ArgumentError.value(code, 'code', 'Empty code');
+    }
+    if (clean.contains('|')) {
+      throw ArgumentError.value(
+        code,
+        'code',
+        'BLE accepts one code at a time. Use sendSettings() or sendVirtualScan()',
+      );
+    }
+    if (!ScannerConfigBarcode.isHex(clean)) {
+      throw ArgumentError.value(
+        code,
+        'code',
+        'Must be hexadecimal (for example 97 for High Volume)',
+      );
+    }
+    if (clean.length ~/ 2 > ScannerConfigBarcode.maxBleSpecCodeBytes) {
+      throw ArgumentError.value(
+        code,
+        'code',
+        'Longer than ${ScannerConfigBarcode.maxBleSpecCodeBytes} bytes',
+      );
+    }
+    return 'ba05${clean.toLowerCase()}';
+  }
+
+  /// Sends one [ScannerSetting] over BLE.
+  ///
+  /// `%%SpecCode` settings use [sendSpecCode]. `%%EnterSet` and `%%ExitSet`
+  /// use [sendVirtualScan].
+  Future<void> sendSetting(ScannerSetting setting) {
+    return setting.isSpecCode
+        ? sendSpecCode(setting.code)
+        : sendVirtualScan(setting.barcode);
+  }
+
+  /// Sends several settings over BLE, one after the other, with [gap]
+  /// between them. The scanner accepts only one setting per BLE command.
+  Future<void> sendSettings(
+    Iterable<ScannerSetting> settings, {
+    Duration gap = const Duration(milliseconds: 300),
+  }) async {
+    var first = true;
+    for (final setting in settings) {
+      if (!first) await Future<void>.delayed(gap);
+      first = false;
+      await sendSetting(setting);
+    }
+  }
+
+  /// Restores the defaults (`%%SpecCode93`). If custom defaults were saved
+  /// with [saveAsCustomDefaults], the scanner restores those values.
+  Future<void> restoreFactoryDefaults() =>
+      sendSetting(ScannerSetting.restoreFactoryDefaults);
+
+  /// Saves all current settings as the custom defaults (`%%SpecCode92`).
+  Future<void> saveAsCustomDefaults() =>
+      sendSetting(ScannerSetting.saveAsCustomDefaults);
+
+  /// Sends [content] to the scanner as if the scanner had read a barcode with
+  /// this content (OP 0x04: `BA 04 <UTF-8 bytes>`).
+  ///
+  /// The vendor SDK uses this command internally, for example to send
+  /// `%%SpecCodeBA4400|AC` and the new Bluetooth name. With it you can send
+  /// a combined barcode such as `%%SpecCode93|78|AC` in one command.
+  /// This command is not in the vendor documentation. Test it on your
+  /// firmware.
+  Future<void> sendVirtualScan(String content) {
+    return sendRawCommand(virtualScanCommand(content));
+  }
+
+  /// Returns the hex command that [sendVirtualScan] sends for [content].
+  static String virtualScanCommand(String content) {
+    if (content.isEmpty) {
+      throw ArgumentError.value(content, 'content', 'Must not be empty');
+    }
+    final hex = utf8
+        .encode(content)
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
+    return 'ba04$hex';
+  }
+
+  /// Sends a command to the scan engine (OP_CMD_TO_LASER: 0x06).
+  Future<void> sendScanEngineCommand(String command) {
     final hexData = command.codeUnits
         .map((c) => c.toRadixString(16).padLeft(2, '0'))
         .join('');
-    return sendCommand('ba06$hexData');
+    return sendRawCommand('ba06$hexData');
   }
 
-  /// Sets up a handler to listen to events from the native side
+  /// Sets up a handler to listen to events from the native side.
+  ///
+  /// Each call replaces the handlers of the previous call.
+  ///
+  /// [onLog] (iOS only) receives debug messages of the native plugin:
+  /// reconnection steps, and what the reconnection scan sees.
   void setListeners({
     Function(bool)? onScannerConnected,
-    Function(int)? onScannerAutoConnectStep,
+    Function(int)? onPairingStep,
     Function(String)? onBarcodeScanned,
+    Function(ScannerConnectionState)? onConnectionStateChanged,
+    Function(String)? onLog,
   }) {
     const MethodChannel('zebra_handheld_scanner').setMethodCallHandler((
       call,
@@ -153,9 +323,21 @@ class ZebraHandheldScanner {
             onScannerConnected(call.arguments as bool);
           }
           break;
-        case 'onScannerAutoConnectStep':
-          if (onScannerAutoConnectStep != null) {
-            onScannerAutoConnectStep(call.arguments as int);
+        case 'onConnectionStateChanged':
+          if (onConnectionStateChanged != null) {
+            onConnectionStateChanged(
+              ScannerConnectionState.fromName(call.arguments as String?),
+            );
+          }
+          break;
+        case 'onPairingStep':
+          if (onPairingStep != null) {
+            onPairingStep(call.arguments as int);
+          }
+          break;
+        case 'onLog':
+          if (onLog != null) {
+            onLog(call.arguments as String);
           }
           break;
         case 'onBarcodeScanned':
@@ -168,7 +350,7 @@ class ZebraHandheldScanner {
                 .replaceAll('\n', '')
                 .trim();
 
-            if(cleaned.startsWith('\uFFFD') || cleaned.isEmpty) {
+            if (cleaned.startsWith('\uFFFD') || cleaned.isEmpty) {
               break;
             }
             if (cleaned.length == 1 &&
