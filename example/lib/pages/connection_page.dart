@@ -204,17 +204,6 @@ class _ConnectionPageState extends State<ConnectionPage> {
           'Disconnect keeps the saved scanner. '
           'Forget also creates a new pairing token, so old scanners never match again.',
       children: [
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Require token on reconnect (iOS)'),
-          subtitle: const Text(
-            'Reconnect only if the saved scanner still advertises this phone\'s token.',
-          ),
-          value: c.requireToken,
-          onChanged: c.isIOS
-              ? (value) => setState(() => c.requireToken = value)
-              : null,
-        ),
         Wrap(
           spacing: 8,
           runSpacing: 8,

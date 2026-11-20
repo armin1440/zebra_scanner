@@ -105,21 +105,8 @@ class ZebraHandheldScanner {
   /// background (state [ScannerConnectionState.reconnecting]) until the
   /// scanner connects or you call [disconnect] or [forgetScanner].
   /// Calling this method again does not start a second connection.
-  ///
-  /// [requireToken] (iOS only): reconnect only when the saved scanner also
-  /// advertises the pairing token of this phone. This stops a phone from
-  /// taking back a scanner that another phone paired with. Use it only if
-  /// your scanner keeps advertising the token after pairing. The Effon
-  /// scanner advertises the token only in pairing mode, so with this option
-  /// it reconnects only after it reads the pairing QR code again.
-  Future<bool> reconnect({
-    bool requireToken = false,
-    Duration timeout = const Duration(seconds: 5),
-  }) {
-    return ZebraHandheldScannerPlatform.instance.reconnect(
-      requireToken: requireToken,
-      timeout: timeout,
-    );
+  Future<bool> reconnect({Duration timeout = const Duration(seconds: 5)}) {
+    return ZebraHandheldScannerPlatform.instance.reconnect(timeout: timeout);
   }
 
   /// Returns the current connection state.

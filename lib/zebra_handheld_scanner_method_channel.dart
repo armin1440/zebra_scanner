@@ -39,11 +39,9 @@ class MethodChannelZebraHandheldScanner extends ZebraHandheldScannerPlatform {
 
   @override
   Future<bool> reconnect({
-    bool requireToken = false,
     Duration timeout = const Duration(seconds: 5),
   }) async {
     final result = await methodChannel.invokeMethod<bool>('reconnect', {
-      'requireToken': requireToken,
       'timeoutMs': timeout.inMilliseconds,
     });
     return result ?? false;

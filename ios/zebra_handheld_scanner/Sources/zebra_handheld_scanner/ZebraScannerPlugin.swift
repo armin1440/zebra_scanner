@@ -13,8 +13,7 @@ import Security
 /// - Ownership lock: only the connected scanner (the owner) can send data
 ///   (R5). Any other connection is cancelled (R3/R4). Discovery is ignored
 ///   when no pairing or reconnection scan is running (R2).
-/// - Reconnection: only to the saved scanner (R6), optionally also checking
-///   the token. It runs until the scanner connects, or until
+/// - Reconnection: only to the saved scanner (R6). It runs until the scanner connects, or until
 ///   `disconnect` / `forgetScanner` (R7). When iOS no longer knows the saved
 ///   scanner, a scan finds it again by its identifier (Apple's reconnection
 ///   order: known peripherals, then connected peripherals, then scan).
@@ -40,7 +39,6 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
     private static let defaultPairingTimeout: TimeInterval = 60
     private static let candidateWindow: TimeInterval = 1.5
     private static let candidateConnectTimeout: TimeInterval = 10
-    private static let tokenReconnectConnectTimeout: TimeInterval = 10
     private static let reconnectRetryDelay: TimeInterval = 2
     private static let scanRestartInterval: TimeInterval = 30
     private static let invalidRssi = 127
@@ -100,10 +98,6 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
     /// iOS forgets scanners that are not bonded (for example after a reboot
     /// or a Bluetooth reset). A scan finds the scanner again.
     private var unresolvedReconnectId: UUID?
-    private var reconnectRequiresToken = false
-    /// True while a token reconnection has found the scanner and connects to it.
-    private var tokenReconnectInFlight = false
-    private var tokenReconnectTimeoutWorkItem: DispatchWorkItem?
     /// Last time the reconnection scan logged each identifier.
     private var lastDiscoveryLog: [UUID: Date] = [:]
 
@@ -192,9 +186,8 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
             result(nil)
 
         case "reconnect":
-            let requireToken = args?["requireToken"] as? Bool ?? false
             let timeoutMs = args?["timeoutMs"] as? Int ?? 5000
-            reconnect(requireToken: requireToken, timeoutMs: timeoutMs, result: result)
+            reconnect(timeoutMs: timeoutMs, result: result)
 
         case "getConnectionState":
             result(currentStateName)
@@ -395,7 +388,7 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
         return UUID(uuidString: value)
     }
 
-    private func reconnect(requireToken: Bool, timeoutMs: Int, result: @escaping FlutterResult) {
+    private func reconnect(timeoutMs: Int, result: @escaping FlutterResult) {
         guard let savedId = savedDeviceId else {
             log("reconnect: no saved scanner")
             result(false)
@@ -416,7 +409,6 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
                 reconnectTarget = nil
                 cancelConnection(old)
             }
-            tokenReconnectInFlight = false
             if let peripheral = knownPeripheral(savedId) {
                 log("reconnect: iOS knows \(savedId) (state \(peripheral.state.rawValue)), connection pending")
                 reconnectTarget = peripheral
@@ -425,16 +417,6 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
                 log("reconnect: iOS does not know \(savedId), scanning for it")
                 unresolvedReconnectId = savedId
             }
-        }
-
-        if requireToken != reconnectRequiresToken {
-            if requireToken, let target = reconnectTarget {
-                // Drop the direct pending connection. The token scan replaces it.
-                cancelConnection(target)
-            }
-            tokenReconnectTimeoutWorkItem?.cancel()
-            tokenReconnectInFlight = false
-            reconnectRequiresToken = requireToken
         }
 
         addPendingConnectResult(result, timeoutMs: timeoutMs)
@@ -463,15 +445,8 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
             cancelConnection(old)
         }
         unresolvedReconnectId = nil
-        tokenReconnectTimeoutWorkItem?.cancel()
-        tokenReconnectInFlight = false
         reconnectTarget = peripheral
-        if reconnectRequiresToken {
-            // The token check of the scan decides.
-            updateScan()
-        } else {
-            startReconnect()
-        }
+        startReconnect()
     }
 
     private func startReconnect() {
@@ -481,12 +456,10 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
             updateScan()
             return
         }
-        if !reconnectRequiresToken {
-            // Pending connection: iOS connects when the scanner advertises,
-            // with no timeout, also in the background.
-            intentionalDisconnects.remove(target.identifier)
-            centralManager.connect(target, options: nil)
-        }
+        // Pending connection: iOS connects when the scanner advertises,
+        // with no timeout, also in the background.
+        intentionalDisconnects.remove(target.identifier)
+        centralManager.connect(target, options: nil)
         updateScan()
     }
 
@@ -498,24 +471,6 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
                   self.reconnectTarget?.identifier == targetId else { return }
             self.startReconnect()
         }
-    }
-
-    private func connectTokenReconnectTarget(_ target: CBPeripheral) {
-        tokenReconnectInFlight = true
-        updateScan()
-        intentionalDisconnects.remove(target.identifier)
-        centralManager.connect(target, options: nil)
-
-        tokenReconnectTimeoutWorkItem?.cancel()
-        let item = DispatchWorkItem { [weak self] in
-            guard let self = self, self.tokenReconnectInFlight,
-                  self.reconnectTarget?.identifier == target.identifier else { return }
-            self.tokenReconnectInFlight = false
-            self.cancelConnection(target)
-            self.updateScan(forceRestart: true)
-        }
-        tokenReconnectTimeoutWorkItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.tokenReconnectConnectTimeout, execute: item)
     }
 
     private func addPendingConnectResult(_ result: @escaping FlutterResult, timeoutMs: Int) {
@@ -540,8 +495,6 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
     private func disconnectAll(forget: Bool) {
         endPairing()
 
-        tokenReconnectTimeoutWorkItem?.cancel()
-        tokenReconnectInFlight = false
         unresolvedReconnectId = nil
         if let target = reconnectTarget {
             reconnectTarget = nil
@@ -767,7 +720,7 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
     private var needsReconnectScan: Bool {
         // The scan finds the scanner by its address when it advertises from an
         // identifier other than the target (see the two addresses above).
-        guard ownerPeripheral == nil, !tokenReconnectInFlight else { return false }
+        guard ownerPeripheral == nil else { return false }
         return unresolvedReconnectId != nil || reconnectTarget != nil
     }
 
@@ -989,8 +942,6 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
             scanRestartTimer = nil
             candidateConnectTimeoutWorkItem?.cancel()
             pairingCandidate = nil
-            tokenReconnectTimeoutWorkItem?.cancel()
-            tokenReconnectInFlight = false
             if let owner = ownerPeripheral {
                 ownerPeripheral = nil
                 resetGattState()
@@ -1027,20 +978,10 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
             }
             if let id = unresolvedReconnectId {
                 guard peripheral.identifier == id else { return }
-                if reconnectRequiresToken && !advertisesToken(advertisementData) { return }
                 log("reconnect: found \(id) by scan")
                 unresolvedReconnectId = nil
                 reconnectTarget = peripheral
-                if reconnectRequiresToken {
-                    connectTokenReconnectTarget(peripheral)
-                } else {
-                    startReconnect()
-                }
-                return
-            }
-            if reconnectRequiresToken, let target = reconnectTarget {
-                guard peripheral.identifier == target.identifier, advertisesToken(advertisementData) else { return }
-                connectTokenReconnectTarget(target)
+                startReconnect()
             }
             return
         }
@@ -1067,8 +1008,6 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
             }
             reconnectTarget = nil
             unresolvedReconnectId = nil
-            tokenReconnectTimeoutWorkItem?.cancel()
-            tokenReconnectInFlight = false
             endPairing()
             adoptOwner(peripheral)
             return
@@ -1077,8 +1016,6 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
         // Reconnection: only the saved scanner.
         if ownerPeripheral == nil, let target = reconnectTarget, target.identifier == id {
             reconnectTarget = nil
-            tokenReconnectTimeoutWorkItem?.cancel()
-            tokenReconnectInFlight = false
             if isPairing {
                 endPairing()
             }
@@ -1104,8 +1041,6 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
         }
         if let target = reconnectTarget, target.identifier == id {
             log("reconnect: connection to \(id) failed: \(error?.localizedDescription ?? "no error")")
-            tokenReconnectTimeoutWorkItem?.cancel()
-            tokenReconnectInFlight = false
             retryReconnect(after: Self.reconnectRetryDelay)
         }
     }
@@ -1121,7 +1056,6 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
             if !intentional {
                 // Lost the owner (distance, sleep, metal): reconnect only to it.
                 reconnectTarget = peripheral
-                tokenReconnectInFlight = false
                 startReconnect()
             }
             emitStateIfChanged()
@@ -1141,8 +1075,6 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
 
         if let target = reconnectTarget, target.identifier == id {
             log("reconnect: \(id) disconnected: \(error?.localizedDescription ?? "no error")")
-            tokenReconnectTimeoutWorkItem?.cancel()
-            tokenReconnectInFlight = false
             retryReconnect(after: Self.reconnectRetryDelay)
         }
     }

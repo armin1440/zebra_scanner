@@ -31,9 +31,6 @@ class ScannerController extends ChangeNotifier {
   /// Content of the last pairing QR code.
   String pairingCode = '';
 
-  /// iOS only: reconnect only when the scanner advertises the pairing token.
-  bool requireToken = false;
-
   String deviceName = 'Unknown';
   String deviceVersion = 'Unknown';
   int? batteryLevel;
@@ -125,8 +122,8 @@ class ScannerController extends ChangeNotifier {
   Future<void> cancelPairing() => run('cancelPairing', plugin.cancelPairing);
 
   Future<void> reconnect({bool silent = false}) async {
-    await run('reconnect(requireToken: $requireToken)', () async {
-      final ok = await plugin.reconnect(requireToken: requireToken);
+    await run('reconnect', () async {
+      final ok = await plugin.reconnect();
       _log('reconnect result: $ok');
       if (!silent) {
         showMessage(

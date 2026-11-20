@@ -41,10 +41,7 @@ abstract class ZebraHandheldScannerPlatform extends PlatformInterface {
     throw UnimplementedError('cancelPairing() has not been implemented.');
   }
 
-  Future<bool> reconnect({
-    bool requireToken = false,
-    Duration timeout = const Duration(seconds: 5),
-  }) {
+  Future<bool> reconnect({Duration timeout = const Duration(seconds: 5)}) {
     throw UnimplementedError('reconnect() has not been implemented.');
   }
 

@@ -1,3 +1,8 @@
+## 1.0.2
+
+* **Breaking:** removed the `requireToken` option of `reconnect`. Android ignored it. On iOS the scanner advertises the token only in pairing mode, from a temporary address, so with `requireToken: true` it never reconnected after a disconnect. `reconnect` now always reconnects to the saved scanner without checking the token.
+* Example app: removed the "Require token on reconnect (iOS)" switch.
+
 ## 1.0.1
 
 * iOS: the plugin no longer creates its `CBCentralManager` at app launch, so the Bluetooth permission prompt no longer appears when the app starts. It appears on the first `requestPermissions` call.

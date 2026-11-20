@@ -476,8 +476,6 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
 
     private fun reconnect(call: MethodCall, result: Result) {
         val timeoutMs = call.argument<Int>("timeoutMs") ?: 5000
-        // "requireToken" is not used on Android: the vendor SDK clears the pairing
-        // id on the scanner after pairing (%%SpecCodeBA4400|AC).
 
         val macAddress = savedDeviceMac()
         if (macAddress == null) {

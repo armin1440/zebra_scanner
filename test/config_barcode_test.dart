@@ -256,13 +256,10 @@ void main() {
 
     test('reconnect passes options', () async {
       expect(
-        await plugin.reconnect(
-          requireToken: true,
-          timeout: const Duration(seconds: 2),
-        ),
+        await plugin.reconnect(timeout: const Duration(seconds: 2)),
         isTrue,
       );
-      expect(calls.single.arguments, {'requireToken': true, 'timeoutMs': 2000});
+      expect(calls.single.arguments, {'timeoutMs': 2000});
     });
 
     test('getConnectionState', () async {
