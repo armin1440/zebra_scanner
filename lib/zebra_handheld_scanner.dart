@@ -58,6 +58,15 @@ class ZebraHandheldScanner {
 
   /// Requests the necessary Bluetooth and Location permissions natively.
   /// Returns [true] if all necessary permissions are granted.
+  ///
+  /// The plugin does not use Bluetooth before this call, so the system
+  /// prompt appears only when you call it. Call it right before the first
+  /// [startPairing] or [reconnect].
+  ///
+  /// * Android: asks for `BLUETOOTH_SCAN` and `BLUETOOTH_CONNECT` (Android 12+)
+  ///   or location (Android 11 and older).
+  /// * iOS: shows the Bluetooth prompt the first time, then answers when
+  ///   the user decides. Returns [false] when the user denied access.
   Future<bool> requestPermissions() {
     return ZebraHandheldScannerPlatform.instance.requestPermissions();
   }

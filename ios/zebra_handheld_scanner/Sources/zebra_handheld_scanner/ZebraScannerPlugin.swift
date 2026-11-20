@@ -78,7 +78,19 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
     // MARK: - State
 
     private let channel: FlutterMethodChannel
-    private var centralManager: CBCentralManager!
+    /// Created on first use, not at app launch: creating it shows the iOS
+    /// Bluetooth permission prompt. Call `requestPermissions` to decide when.
+    private var createdCentralManager: CBCentralManager?
+    private var centralManager: CBCentralManager {
+        if let manager = createdCentralManager {
+            return manager
+        }
+        let manager = CBCentralManager(delegate: self, queue: nil)
+        createdCentralManager = manager
+        return manager
+    }
+    /// `requestPermissions` calls waiting for the first Bluetooth state.
+    private var pendingPermissionResults: [FlutterResult] = []
 
     /// The connected scanner. Only this scanner may send data.
     private var ownerPeripheral: CBPeripheral?
@@ -136,7 +148,6 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
     init(channel: FlutterMethodChannel) {
         self.channel = channel
         super.init()
-        self.centralManager = CBCentralManager(delegate: self, queue: nil)
         self.isInForeground = UIApplication.shared.applicationState != .background
 
         NotificationCenter.default.addObserver(
@@ -167,15 +178,7 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
             result("iOS " + UIDevice.current.systemVersion)
 
         case "requestPermissions":
-            if #available(iOS 13.1, *) {
-                let auth = CBCentralManager.authorization
-                result(auth == .allowedAlways || auth == .notDetermined)
-            } else if #available(iOS 13.0, *) {
-                let auth = centralManager.authorization
-                result(auth == .allowedAlways || auth == .notDetermined)
-            } else {
-                result(true)
-            }
+            requestPermissions(result: result)
 
         case "startPairing":
             let timeout = (args?["timeoutMs"] as? Int).map { TimeInterval($0) / 1000 } ?? Self.defaultPairingTimeout
@@ -251,6 +254,33 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
         default:
             result(FlutterMethodNotImplemented)
         }
+    }
+
+    // MARK: - Permissions
+
+    /// Shows the iOS Bluetooth prompt if the user was never asked, and
+    /// answers when the user has decided and Bluetooth reports its state.
+    private func requestPermissions(result: @escaping FlutterResult) {
+        if #available(iOS 13.1, *) {
+            let auth = CBCentralManager.authorization
+            if auth == .denied || auth == .restricted {
+                result(false)
+                return
+            }
+        }
+        let manager = centralManager
+        if manager.state == .unknown {
+            pendingPermissionResults.append(result)
+            return
+        }
+        result(isBluetoothAuthorized(manager))
+    }
+
+    private func isBluetoothAuthorized(_ manager: CBCentralManager) -> Bool {
+        if #available(iOS 13.1, *) {
+            return CBCentralManager.authorization == .allowedAlways
+        }
+        return manager.state != .unauthorized
     }
 
     // MARK: - Pairing
@@ -742,7 +772,8 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
     }
 
     private func updateScan(forceRestart: Bool = false) {
-        let shouldScan = centralManager.state == .poweredOn && isInForeground
+        // No manager yet: Bluetooth is not used before the app asks for it.
+        let shouldScan = createdCentralManager?.state == .poweredOn && isInForeground
             && (needsPairingScan || needsReconnectScan)
         if shouldScan {
             if !isScanning || forceRestart {
@@ -938,6 +969,12 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
     // MARK: - CBCentralManagerDelegate
 
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        if central.state != .unknown, !pendingPermissionResults.isEmpty {
+            let isAuthorized = isBluetoothAuthorized(central)
+            let results = pendingPermissionResults
+            pendingPermissionResults.removeAll()
+            results.forEach { $0(isAuthorized) }
+        }
         switch central.state {
         case .poweredOn:
             if reconnectTarget != nil {

@@ -1,3 +1,8 @@
+## 1.0.1
+
+* iOS: the plugin no longer creates its `CBCentralManager` at app launch, so the Bluetooth permission prompt no longer appears when the app starts. It appears on the first `requestPermissions` call.
+* iOS: `requestPermissions` now shows the Bluetooth prompt and waits for the answer. Before, it returned `true` when the user was not asked yet, and `false` was never possible until the user had denied access.
+
 ## 1.0.0
 
 * **Breaking:** `sendSpecCode` now sends the code as raw hex bytes (`97` → `BA 05 97`), as the vendor documents and SDK do. Non-hex values such as `HighVolume` throw `ArgumentError`.
