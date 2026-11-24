@@ -17,6 +17,10 @@ import Security
 ///   `disconnect` / `forgetScanner` (R7). When iOS no longer knows the saved
 ///   scanner, a scan finds it again by its identifier (Apple's reconnection
 ///   order: known peripherals, then connected peripherals, then scan).
+///   It runs only in the foreground: in the background (also when the device
+///   is locked or the app terminates) the connection to the scanner, pending
+///   or established, is cancelled, and the reconnection starts again when the
+///   app returns to the foreground. The saved scanner is kept.
 /// - Two addresses: in pairing mode (after it reads the pairing QR code) the
 ///   scanner advertises the token from a temporary address. Otherwise it
 ///   advertises from its own address, with the address in its manufacturer
@@ -150,6 +154,9 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
         NotificationCenter.default.addObserver(
             self, selector: #selector(appWillEnterForeground),
             name: UIApplication.willEnterForegroundNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appDidEnterBackground),
+            name: UIApplication.willTerminateNotification, object: nil)
     }
 
     deinit {
@@ -451,13 +458,13 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
 
     private func startReconnect() {
         defer { emitStateIfChanged() }
-        guard let target = reconnectTarget, ownerPeripheral == nil,
+        guard let target = reconnectTarget, ownerPeripheral == nil, isInForeground,
               centralManager.state == .poweredOn else {
             updateScan()
             return
         }
-        // Pending connection: iOS connects when the scanner advertises,
-        // with no timeout, also in the background.
+        // Pending connection: iOS connects when the scanner advertises, with
+        // no timeout. It is cancelled when the app goes to the background.
         intentionalDisconnects.remove(target.identifier)
         centralManager.connect(target, options: nil)
         updateScan()
@@ -762,14 +769,42 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
         scanRestartTimer = nil
     }
 
+    /// Also called when the device is locked and when the app terminates.
+    /// The scanner must not stay connected, or connect, while the app is not
+    /// in use: the connection is cancelled, pending or established. The saved
+    /// scanner stays the target: the state is `reconnecting` until the app
+    /// returns to the foreground and the scanner connects again.
     @objc private func appDidEnterBackground() {
         isInForeground = false
+        if let owner = ownerPeripheral {
+            log("disconnected in the background")
+            ownerPeripheral = nil
+            resetGattState()
+            reconnectTarget = owner
+            cancelConnection(owner)
+            channel.invokeMethod("onScannerConnected", arguments: false)
+        } else if let target = reconnectTarget {
+            log("reconnect: paused in the background")
+            cancelConnection(target)
+        }
+        if let candidate = pairingCandidate {
+            // Pairing goes on in the foreground: the scan finds the scanner again.
+            candidateConnectTimeoutWorkItem?.cancel()
+            candidateConnectTimeoutWorkItem = nil
+            pairingCandidate = nil
+            cancelConnection(candidate)
+        }
         updateScan()
+        emitStateIfChanged()
     }
 
     @objc private func appWillEnterForeground() {
         isInForeground = true
         updateScan(forceRestart: true)
+        if reconnectTarget != nil {
+            log("reconnect: resumed in the foreground")
+            startReconnect()
+        }
     }
 
     // MARK: - Token
@@ -1013,8 +1048,14 @@ public class ZebraScannerPlugin: NSObject, FlutterPlugin, CBCentralManagerDelega
             return
         }
 
-        // Reconnection: only the saved scanner.
+        // Reconnection: only the saved scanner, and only in the foreground.
         if ownerPeripheral == nil, let target = reconnectTarget, target.identifier == id {
+            if !isInForeground {
+                // The connection completed while the app was going to the
+                // background. It is made again in the foreground.
+                cancelConnection(peripheral)
+                return
+            }
             reconnectTarget = nil
             if isPairing {
                 endPairing()

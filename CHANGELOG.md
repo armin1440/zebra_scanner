@@ -1,3 +1,7 @@
+## 1.0.3
+
+* iOS: the scanner is now connected only while the app is in the foreground. Before, the pending connection had no timeout, so iOS reconnected the scanner while the app was in the background or the device was locked. When the app goes to the background, the device is locked or the app terminates, the plugin now disconnects a connected scanner (`onScannerConnected(false)`) or cancels the pending reconnection. The scanner stays saved, the state is `reconnecting`, and the reconnection starts again when the app returns.
+
 ## 1.0.2
 
 * **Breaking:** removed the `requireToken` option of `reconnect`. Android ignored it. On iOS the scanner advertises the token only in pairing mode, from a temporary address, so with `requireToken: true` it never reconnected after a disconnect. `reconnect` now always reconnects to the saved scanner without checking the token.
