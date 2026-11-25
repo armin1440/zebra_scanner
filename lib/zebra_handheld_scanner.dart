@@ -305,8 +305,9 @@ class ZebraHandheldScanner {
   ///
   /// Each call replaces the handlers of the previous call.
   ///
-  /// [onLog] (iOS only) receives debug messages of the native plugin:
-  /// reconnection steps, and what the reconnection scan sees.
+  /// [onLog] receives debug messages of the native plugin: connection,
+  /// pairing and reconnection steps (on iOS also what the reconnection scan
+  /// sees). On Android the same lines also go to logcat (tag `BLE_AUTO`).
   void setListeners({
     Function(bool)? onScannerConnected,
     Function(int)? onPairingStep,

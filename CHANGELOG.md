@@ -1,3 +1,11 @@
+## 1.0.5
+
+* Android: the plugin no longer leaves a hidden connection behind that can hold the scanner without the app knowing (the scanner LED is off, no phone shows it, only turning Bluetooth off frees it). The vendor SDK connects with `autoConnect`, so every connection that is not closed reconnects by itself whenever the scanner advertises, for example while another phone pairs it. The plugin now tracks every connection it opens and closes each one it stops using: the reconnection attempt in flight when the reconnection stops, the app goes to the background, pairing starts or the scanner is disconnected; a pairing connection still in flight when pairing is cancelled or started again; and all connections when the plugin detaches.
+* Android: a connection the plugin does not use is now closed at once instead of being ignored, as on iOS: one that comes back while the phone is pairing, the scanner is not saved or the app is in the background, and one that sends data or disconnects while it is not the connected scanner. When a connection is adopted, every other one is closed.
+* Android: every connection attempt now has a 20 s time limit. The vendor SDK sometimes never calls back (no SDK timer covers the time between link-up and the MTU answer, and `connect()` returns silently when a connection is already running), which stopped the reconnection for good while the link could be up.
+* Android: `onLog` now receives the plugin's debug messages, as on iOS.
+* Android: a pairing result that arrives after `cancelPairing` is ignored.
+
 ## 1.0.4
 
 * Android: the scanner is now connected only while the app is in the foreground, as on iOS. When the app goes to the background or the device is locked, the plugin disconnects a connected scanner (`onScannerConnected(false)`) or pauses the reconnection. The scanner stays saved, the state is `reconnecting`, and the reconnection starts again when the app returns. A scanner that finishes connecting while the app is in the background is disconnected at once and reconnected in the foreground.

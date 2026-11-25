@@ -27,6 +27,8 @@ import com.lwtek.scanner.ble.ScannerBleDevice
 import com.lwtek.scanner.core.ScannerDevice
 import java.io.File
 import java.lang.reflect.Modifier
+import java.util.Collections
+import java.util.IdentityHashMap
 import java.util.Locale
 import java.util.UUID
 
@@ -46,7 +48,16 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
     private var isPairing = false
     /** MAC address of the saved scanner while the plugin tries to reconnect to it. */
     private var reconnectMac: String? = null
-    private var reconnectAttemptInFlight = false
+    /** The reconnection attempt that waits for its connect callback. Only one runs at a time. */
+    private var reconnectAttempt: ScannerDevice? = null
+    /** The pairing connection that waits for its connect callback. */
+    private var pairingDevice: ScannerDevice? = null
+    /**
+     * Every SDK device that may still hold a GATT client in Android: the connected scanner and the attempts in
+     * flight. The SDK connects with autoConnect, so a device that is not released reconnects by itself and holds
+     * the scanner without the app knowing. Compared by identity, as several devices can have the same address.
+     */
+    private val openDevices: MutableSet<ScannerDevice> = Collections.newSetFromMap(IdentityHashMap())
     private var lastEmittedState: String? = null
     private val pendingConnectResults = mutableMapOf<Int, Result>()
     private var nextPendingResultId = 0
@@ -79,6 +90,12 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         private const val SDK_ID_HOLDER_CLASS = "lwautoif.lwautonew"
         private const val RECONNECT_RETRY_MS = 5000L
         private const val RECONNECT_AFTER_DROP_MS = 1000L
+        /**
+         * Time limit of one connect() call. The SDK's own 12 s timer ends when the link comes up, and its next one
+         * starts only after the MTU answer. connect() also returns without a callback when its Bluetooth check fails
+         * or a connection is already running.
+         */
+        private const val CONNECT_TIMEOUT_MS = 20_000L
     }
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -257,8 +274,12 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         }
     }
 
-    /** Makes [device] the connected scanner. */
+    /** Makes [device] the connected scanner. Every other connection of the plugin is released. */
     private fun adoptDevice(device: ScannerDevice) {
+        openDevices.filter { it !== device }.forEach { release(it) }
+        reconnectAttempt = null
+        pairingDevice = null
+        openDevices.add(device)
         connectedDevice = device
         saveDeviceMac(device.address)
         reconnectMac = null
@@ -284,8 +305,12 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
                 if (str == null) return@post
                 val text = str as? String ?: return@post
 
-                // Data only from the connected scanner.
-                if (connectedDevice != null && connectedDevice !== device) return@post
+                // Data only from the connected scanner. Any other connection is closed, never left open.
+                if (connectedDevice != null && connectedDevice !== device) {
+                    log("Closing a scanner connection that sent data but is not the connected scanner")
+                    release(device)
+                    return@post
+                }
 
                 val cleanedChunk = text.replace("\r", "").replace("\n", "").trim()
 
@@ -299,7 +324,11 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
 
                 // If we receive data, the device is definitely connected
                 if (connectedDevice == null) {
-                    if (!canAdopt(device)) return@post
+                    if (!canAdopt(device) || !isInForeground) {
+                        log("Closing a scanner connection that sent data but cannot be adopted")
+                        release(device)
+                        return@post
+                    }
                     adoptDevice(device)
                 }
 
@@ -320,19 +349,29 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         device.onState(object : ScannerDevice.StateCallback() {
             override fun onConnected() {
                 mainHandler.post {
-                    if (connectedDevice == null && canAdopt(device)) {
+                    if (connectedDevice === device) return@post
+                    if (connectedDevice == null && canAdopt(device) && isInForeground) {
+                        log("A previous scanner connection came back. Adopting it")
                         adoptDevice(device)
+                    } else {
+                        // As on iOS: a connection the plugin does not use is closed, so it cannot hold the scanner.
+                        log("Closing a scanner connection that came back but cannot be adopted")
+                        release(device)
                     }
                 }
             }
 
             override fun onDisconnected() {
                 mainHandler.post {
-                    // A device that was disconnected on purpose or replaced is ignored.
-                    if (connectedDevice !== device) return@post
+                    // A device that was disconnected on purpose or replaced is only released.
+                    if (connectedDevice !== device) {
+                        release(device)
+                        return@post
+                    }
+                    log("Scanner link lost")
                     channel.invokeMethod("onScannerConnected", false)
                     clearConnectionState()
-                    closeDevice(device)
+                    release(device)
                     // Lost the scanner (distance, sleep): reconnect only to it, and only in the foreground.
                     val mac = device.address
                     if (mac != null && !isPairing) {
@@ -347,7 +386,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
     }
 
     private fun startPairing(result: Result) {
-        Log.d(TAG, "startPairing() started")
+        log("startPairing() started")
 
         val currentActivity = activity
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && currentActivity != null) {
@@ -360,7 +399,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
             }
 
             if (!isLocationEnabled) {
-                Log.w(TAG, "Location services are disabled, prompting user to enable them")
+                log("Location services are disabled, prompting user to enable them")
                 try {
                     currentActivity.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                 } catch (e: Exception) {
@@ -372,11 +411,11 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         }
 
         if (isAutoConnectBleRunning) {
-            Log.w(TAG, "startPairing() ignored because a previous call is still running")
+            log("startPairing() ignored because a previous call is still running")
 
             // Return cached QR if available
             lastBleQrCode?.let {
-                Log.d(TAG, "Returning cached QR code while call is already running")
+                log("Returning cached QR code while call is already running")
                 result.success(it)
                 return
             }
@@ -389,73 +428,76 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
 
         try {
             // Clean previous device state before requesting a new QR
-            connectedDevice?.let { device ->
-                try {
-                    Log.d(TAG, "Disconnecting previous connected device before generating QR")
-                    device.onData(null)
-                    device.disconnect()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error while disconnecting previous device", e)
-                } finally {
-                    clearConnectionState()
-                }
+            if (connectedDevice != null) {
+                log("Disconnecting previous connected device before generating QR")
+                clearConnectionState()
             }
             // Pairing replaces the reconnection to the old scanner.
             stopReconnect()
+            pairingDevice = null
+            // Also closes the previous scanner and a previous pairing connection.
+            releaseAll()
 
             val qrCode = ScannerAutoService.ble({ success, device ->
-                Log.d(TAG, "BLE callback triggered. success=$success device=$device")
+                log("BLE callback triggered. success=$success device=$device")
 
                 mainHandler.post {
+                    if (!isPairing) {
+                        log("BLE callback ignored: pairing was cancelled")
+                        return@post
+                    }
                     if (success && device != null) {
-                        Log.d(TAG, "Device found. Creating ScannerBleDevice")
+                        log("Device found. Creating ScannerBleDevice")
 
-                        val scanner = ScannerBleDevice.from(device)
+                        val scanner = ScannerBleDevice.from(device) as ScannerDevice
+                        pairingDevice = scanner
 
-                        Log.d(TAG, "Attempting to connect to device")
-                        scanner.connect { connectSuccess, error ->
-                            Log.d(TAG, "Connect callback triggered. success=$connectSuccess error=$error")
-
-                            mainHandler.post {
-                                isPairing = false
-                                if (connectSuccess && isInForeground) {
-                                    Log.d(TAG, "Device connected successfully")
-                                    adoptDevice(scanner)
-                                } else if (connectSuccess) {
-                                    Log.d(TAG, "Device connected in the background. Reconnecting in the foreground")
-                                    deferToForeground(scanner)
-                                } else {
-                                    Log.e(TAG, "Device connection FAILED")
-                                    closeDevice(scanner)
-                                    channel.invokeMethod("onScannerConnected", false)
-                                    emitStateIfChanged()
-                                }
+                        log("Attempting to connect to device")
+                        connectWithTimeout(scanner) { connectSuccess ->
+                            if (pairingDevice !== scanner) {
+                                // Pairing was cancelled or started again while connecting.
+                                release(scanner)
+                                return@connectWithTimeout
+                            }
+                            pairingDevice = null
+                            isPairing = false
+                            if (connectSuccess && isInForeground) {
+                                log("Device connected successfully")
+                                adoptDevice(scanner)
+                            } else if (connectSuccess) {
+                                log("Device connected in the background. Reconnecting in the foreground")
+                                deferToForeground(scanner)
+                            } else {
+                                log("Device connection FAILED")
+                                release(scanner)
+                                channel.invokeMethod("onScannerConnected", false)
+                                emitStateIfChanged()
                             }
                         }
                     } else {
-                        Log.e(TAG, "BLE scan failed or device is null")
+                        log("BLE scan failed or device is null")
                         isPairing = false
                         channel.invokeMethod("onScannerConnected", false)
                         emitStateIfChanged()
                     }
                 }
             }, { step ->
-                Log.d(TAG, "AutoConnect step received: $step")
+                log("AutoConnect step received: $step")
 
                 mainHandler.post {
                     channel.invokeMethod("onPairingStep", step)
                 }
             })
 
-            Log.d(TAG, "ScannerAutoService.ble() returned qrCode = $qrCode")
+            log("ScannerAutoService.ble() returned qrCode = $qrCode")
 
             if (!qrCode.isNullOrBlank()) {
-                Log.d(TAG, "QR Code generated successfully")
+                log("QR Code generated successfully")
                 lastBleQrCode = qrCode
                 isPairing = true
                 result.success(qrCode)
             } else if (!lastBleQrCode.isNullOrBlank()) {
-                Log.w(TAG, "SDK returned null QR. Returning cached QR code instead")
+                log("SDK returned null QR. Returning cached QR code instead")
                 isPairing = true
                 result.success(lastBleQrCode)
             } else {
@@ -466,7 +508,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
             Log.e(TAG, "Exception inside startPairing()", e)
 
             if (!lastBleQrCode.isNullOrBlank()) {
-                Log.w(TAG, "Returning cached QR code after exception")
+                log("Returning cached QR code after exception")
                 isPairing = true
                 result.success(lastBleQrCode)
             } else {
@@ -485,6 +527,9 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         } catch (e: Exception) {
             Log.e(TAG, "Error while stopping auto connect", e)
         }
+        // A pairing connection still in flight would otherwise connect later, unseen.
+        pairingDevice?.let { release(it) }
+        pairingDevice = null
         isPairing = false
         emitStateIfChanged()
     }
@@ -515,7 +560,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         reconnectMac = macAddress
         addPendingConnectResult(result, timeoutMs)
         // Only one connection attempt at a time. Repeated calls wait for it.
-        if (!reconnectAttemptInFlight) {
+        if (reconnectAttempt == null) {
             mainHandler.removeCallbacks(reconnectRunnable)
             attemptReconnect()
         }
@@ -525,7 +570,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
     private fun attemptReconnect() {
         val mac = reconnectMac ?: return
         // In the background the reconnection waits: onAppForeground starts it again.
-        if (connectedDevice != null || reconnectAttemptInFlight || !isInForeground) return
+        if (connectedDevice != null || reconnectAttempt != null || !isInForeground) return
 
         val bluetoothAdapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
         if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
@@ -535,47 +580,82 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
 
         try {
             val scanner = ScannerBleDevice.from(bluetoothAdapter.getRemoteDevice(mac)) as ScannerDevice
-            reconnectAttemptInFlight = true
-            scanner.connect { connectSuccess, _ ->
-                mainHandler.post {
-                    reconnectAttemptInFlight = false
-                    if (reconnectMac != mac || connectedDevice != null) {
-                        // Cancelled or replaced while connecting.
-                        if (connectedDevice !== scanner) closeDevice(scanner)
-                        return@post
-                    }
-                    if (!isInForeground) {
-                        // The app went to the background while connecting. onAppForeground connects again.
-                        closeDevice(scanner)
-                        return@post
-                    }
-                    if (connectSuccess) {
-                        adoptDevice(scanner)
-                    } else {
-                        closeDevice(scanner)
-                        mainHandler.postDelayed(reconnectRunnable, RECONNECT_RETRY_MS)
-                    }
+            reconnectAttempt = scanner
+            log("Reconnecting to the saved scanner")
+            connectWithTimeout(scanner) { connectSuccess ->
+                if (reconnectAttempt !== scanner) {
+                    // Cancelled (stopReconnect, background) or replaced while connecting.
+                    release(scanner)
+                    return@connectWithTimeout
+                }
+                reconnectAttempt = null
+                if (reconnectMac != mac || connectedDevice != null || !isInForeground) {
+                    release(scanner)
+                    return@connectWithTimeout
+                }
+                if (connectSuccess) {
+                    log("Reconnected to the saved scanner")
+                    adoptDevice(scanner)
+                } else {
+                    log("Reconnection attempt failed. Next attempt in ${RECONNECT_RETRY_MS / 1000} s")
+                    release(scanner)
+                    mainHandler.postDelayed(reconnectRunnable, RECONNECT_RETRY_MS)
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Exception connecting to last device", e)
-            reconnectAttemptInFlight = false
+            reconnectAttempt?.let { release(it) }
+            reconnectAttempt = null
             mainHandler.postDelayed(reconnectRunnable, RECONNECT_RETRY_MS)
         }
     }
 
+    /** Stops the reconnection, including the attempt in flight. */
     private fun stopReconnect() {
         reconnectMac = null
         mainHandler.removeCallbacks(reconnectRunnable)
+        reconnectAttempt?.let { release(it) }
+        reconnectAttempt = null
         completePendingConnectResults(false)
+    }
+
+    /**
+     * Connects [device] and calls [onResult] exactly once, on the main thread. The SDK may never call back, so the
+     * attempt fails after [CONNECT_TIMEOUT_MS]. The device is tracked in [openDevices] until it is released.
+     */
+    private fun connectWithTimeout(device: ScannerDevice, onResult: (Boolean) -> Unit) {
+        openDevices.add(device)
+        var isDone = false
+        lateinit var timeout: Runnable
+        fun finish(success: Boolean) {
+            if (isDone) return
+            isDone = true
+            mainHandler.removeCallbacks(timeout)
+            onResult(success)
+        }
+        timeout = Runnable {
+            log("Connection attempt got no answer in ${CONNECT_TIMEOUT_MS / 1000} s")
+            finish(false)
+        }
+        mainHandler.postDelayed(timeout, CONNECT_TIMEOUT_MS)
+        try {
+            device.connect { connectSuccess, error ->
+                log("Connect callback triggered. success=$connectSuccess error=$error")
+                mainHandler.post { finish(connectSuccess) }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception while connecting", e)
+            mainHandler.post { finish(false) }
+        }
     }
 
     /**
      * Closes the GATT client of [device]. The vendor SDK connects with autoConnect and closes the client after a
      * link loss only for status 133, so an open client would let Android reconnect the scanner by itself, also in
-     * the background.
+     * the background, and hold it without the app knowing. The SDK's disconnect() is the only call that closes it.
      */
-    private fun closeDevice(device: ScannerDevice) {
+    private fun release(device: ScannerDevice) {
+        openDevices.remove(device)
         try {
             device.onData(null)
             device.disconnect()
@@ -584,13 +664,18 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         }
     }
 
+    /** Releases every connection the plugin opened. */
+    private fun releaseAll() {
+        openDevices.toList().forEach { release(it) }
+    }
+
     /**
      * Keeps [device] saved without keeping it connected: it finished connecting while the app was in the
      * background, so the plugin connects to it again when the app returns to the foreground.
      */
     private fun deferToForeground(device: ScannerDevice) {
         val mac = device.address
-        closeDevice(device)
+        release(device)
         if (mac != null) {
             saveDeviceMac(mac)
             reconnectMac = mac
@@ -624,16 +709,19 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
     private fun onAppBackground() {
         isInForeground = false
         mainHandler.removeCallbacks(reconnectRunnable)
+        // The attempt in flight would connect in the background. onAppForeground starts a new one.
+        reconnectAttempt?.let { release(it) }
+        reconnectAttempt = null
         val device = connectedDevice
         if (device != null) {
-            Log.d(TAG, "App in the background: disconnecting the scanner")
+            log("App in the background: disconnecting the scanner")
             val mac = device.address
             clearConnectionState()
-            closeDevice(device)
+            release(device)
             if (mac != null) reconnectMac = mac
             channel.invokeMethod("onScannerConnected", false)
         } else if (reconnectMac != null) {
-            Log.d(TAG, "App in the background: reconnection paused")
+            log("App in the background: reconnection paused")
         }
         emitStateIfChanged()
     }
@@ -641,7 +729,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
     private fun onAppForeground() {
         isInForeground = true
         if (reconnectMac == null || connectedDevice != null) return
-        Log.d(TAG, "App in the foreground: reconnecting to the saved scanner")
+        log("App in the foreground: reconnecting to the saved scanner")
         mainHandler.removeCallbacks(reconnectRunnable)
         attemptReconnect()
     }
@@ -654,17 +742,11 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         cancelPairing()
         stopReconnect()
 
-        connectedDevice?.let { device ->
-            connectedDevice = null
-            try {
-                device.onData(null)
-                device.disconnect()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error while disconnecting", e)
-            }
-            clearConnectionState()
-            channel.invokeMethod("onScannerConnected", false)
-        }
+        val device = connectedDevice
+        // Also closes connections the plugin no longer uses, so none can take the scanner back.
+        clearConnectionState()
+        releaseAll()
+        if (device != null) channel.invokeMethod("onScannerConnected", false)
 
         if (forget) {
             prefs()?.edit()?.remove(PREF_LAST_MAC)?.apply()
@@ -676,7 +758,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
                 Log.e(TAG, "Error while stopping auto connect", e)
             }
             val immediate = rotateSdkPairingId()
-            Log.d(TAG, "Pairing id rotated. Effective immediately: $immediate")
+            log("Pairing id rotated. Effective immediately: $immediate")
         }
 
         emitStateIfChanged()
@@ -808,12 +890,30 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
         ProcessLifecycleOwner.get().lifecycle.removeObserver(appLifecycleObserver)
-        mainHandler.removeCallbacks(reconnectRunnable)
+        if (isPairing) {
+            try {
+                ScannerAutoService.stop()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error while stopping auto connect", e)
+            }
+            isPairing = false
+        }
         reconnectMac = null
+        reconnectAttempt = null
+        pairingDevice = null
         pendingConnectResults.clear()
-        connectedDevice?.onData(null)
-        connectedDevice?.disconnect()
         clearConnectionState()
+        releaseAll()
+        // Also drops the reconnection and the connect time limits.
+        mainHandler.removeCallbacksAndMessages(null)
         appContext = null
+    }
+
+    /** Logs to logcat and sends the line to Dart (`onLog`), as the iOS plugin does. */
+    private fun log(message: String) {
+        Log.d(TAG, message)
+        mainHandler.post {
+            if (appContext != null) channel.invokeMethod("onLog", message)
+        }
     }
 }
