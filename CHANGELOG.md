@@ -1,3 +1,9 @@
+## 1.0.4
+
+* Android: the scanner is now connected only while the app is in the foreground, as on iOS. When the app goes to the background or the device is locked, the plugin disconnects a connected scanner (`onScannerConnected(false)`) or pauses the reconnection. The scanner stays saved, the state is `reconnecting`, and the reconnection starts again when the app returns. A scanner that finishes connecting while the app is in the background is disconnected at once and reconnected in the foreground.
+* Android: the plugin now closes the connection when the link drops. The vendor SDK connects with `autoConnect` and closed the connection only for GATT status 133, so Android could reconnect the scanner by itself, also in the background, next to the plugin's own reconnection. Failed pairing and reconnection attempts are closed as well.
+* Android: new dependency `androidx.lifecycle:lifecycle-process`.
+
 ## 1.0.3
 
 * iOS: the scanner is now connected only while the app is in the foreground. Before, the pending connection had no timeout, so iOS reconnected the scanner while the app was in the background or the device was locked. When the app goes to the background, the device is locked or the app terminates, the plugin now disconnects a connected scanner (`onScannerConnected(false)`) or cancels the pending reconnection. The scanner stays saved, the state is `reconnecting`, and the reconnection starts again when the app returns.

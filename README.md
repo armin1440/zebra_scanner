@@ -104,7 +104,7 @@ On iOS the token is 4 random bytes, kept until `forgetScanner()`. iOS connects o
 bool ok = await _zebraScannerPlugin.reconnect();
 ```
 
-On iOS the scanner is connected only while the app is in the foreground. When the app goes to the background, the device is locked or the app terminates, the plugin disconnects the scanner (or stops the reconnection) and keeps it saved. The state is `reconnecting` until the app returns and the scanner connects again.
+The scanner is connected only while the app is in the foreground, on iOS and Android. When the app goes to the background, the device is locked or the app terminates, the plugin disconnects the scanner (or stops the reconnection) and keeps it saved. The state is `reconnecting` until the app returns and the scanner connects again. When the link drops in the foreground (distance, sleep, Bluetooth off), the plugin closes the connection and reconnects to the saved scanner.
 
 **Connection state:**
 ```dart

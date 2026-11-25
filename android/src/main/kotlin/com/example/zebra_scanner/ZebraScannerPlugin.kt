@@ -11,6 +11,9 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -49,6 +52,13 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
     private var nextPendingResultId = 0
     private val reconnectRunnable = Runnable { attemptReconnect() }
 
+    /** The scanner is connected only while the app is in the foreground. */
+    private var isInForeground = false
+    private val appLifecycleObserver = object : DefaultLifecycleObserver {
+        override fun onStart(owner: LifecycleOwner) = onAppForeground()
+        override fun onStop(owner: LifecycleOwner) = onAppBackground()
+    }
+
     private val barcodeBuffer = StringBuilder()
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -75,6 +85,8 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         appContext = flutterPluginBinding.applicationContext
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "zebra_handheld_scanner")
         channel.setMethodCallHandler(this)
+        // Calls onAppForeground at once when the app is already in the foreground.
+        ProcessLifecycleOwner.get().lifecycle.addObserver(appLifecycleObserver)
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
@@ -320,7 +332,8 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
                     if (connectedDevice !== device) return@post
                     channel.invokeMethod("onScannerConnected", false)
                     clearConnectionState()
-                    // Lost the scanner (distance, sleep): reconnect only to it.
+                    closeDevice(device)
+                    // Lost the scanner (distance, sleep): reconnect only to it, and only in the foreground.
                     val mac = device.address
                     if (mac != null && !isPairing) {
                         reconnectMac = mac
@@ -405,11 +418,15 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
 
                             mainHandler.post {
                                 isPairing = false
-                                if (connectSuccess) {
+                                if (connectSuccess && isInForeground) {
                                     Log.d(TAG, "Device connected successfully")
                                     adoptDevice(scanner)
+                                } else if (connectSuccess) {
+                                    Log.d(TAG, "Device connected in the background. Reconnecting in the foreground")
+                                    deferToForeground(scanner)
                                 } else {
                                     Log.e(TAG, "Device connection FAILED")
+                                    closeDevice(scanner)
                                     channel.invokeMethod("onScannerConnected", false)
                                     emitStateIfChanged()
                                 }
@@ -507,7 +524,8 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
 
     private fun attemptReconnect() {
         val mac = reconnectMac ?: return
-        if (connectedDevice != null || reconnectAttemptInFlight) return
+        // In the background the reconnection waits: onAppForeground starts it again.
+        if (connectedDevice != null || reconnectAttemptInFlight || !isInForeground) return
 
         val bluetoothAdapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
         if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
@@ -523,15 +541,18 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
                     reconnectAttemptInFlight = false
                     if (reconnectMac != mac || connectedDevice != null) {
                         // Cancelled or replaced while connecting.
-                        if (connectSuccess && connectedDevice !== scanner) {
-                            scanner.onData(null)
-                            scanner.disconnect()
-                        }
+                        if (connectedDevice !== scanner) closeDevice(scanner)
+                        return@post
+                    }
+                    if (!isInForeground) {
+                        // The app went to the background while connecting. onAppForeground connects again.
+                        closeDevice(scanner)
                         return@post
                     }
                     if (connectSuccess) {
                         adoptDevice(scanner)
                     } else {
+                        closeDevice(scanner)
                         mainHandler.postDelayed(reconnectRunnable, RECONNECT_RETRY_MS)
                     }
                 }
@@ -549,6 +570,34 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         completePendingConnectResults(false)
     }
 
+    /**
+     * Closes the GATT client of [device]. The vendor SDK connects with autoConnect and closes the client after a
+     * link loss only for status 133, so an open client would let Android reconnect the scanner by itself, also in
+     * the background.
+     */
+    private fun closeDevice(device: ScannerDevice) {
+        try {
+            device.onData(null)
+            device.disconnect()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error while closing the scanner connection", e)
+        }
+    }
+
+    /**
+     * Keeps [device] saved without keeping it connected: it finished connecting while the app was in the
+     * background, so the plugin connects to it again when the app returns to the foreground.
+     */
+    private fun deferToForeground(device: ScannerDevice) {
+        val mac = device.address
+        closeDevice(device)
+        if (mac != null) {
+            saveDeviceMac(mac)
+            reconnectMac = mac
+        }
+        emitStateIfChanged()
+    }
+
     private fun addPendingConnectResult(result: Result, timeoutMs: Int) {
         val id = nextPendingResultId++
         pendingConnectResults[id] = result
@@ -561,6 +610,40 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
         val results = pendingConnectResults.values.toList()
         pendingConnectResults.clear()
         results.forEach { it.success(value) }
+    }
+
+    // endregion
+
+    // region App lifecycle
+
+    /**
+     * The app went to the background or the device was locked. The scanner is disconnected and stays saved:
+     * the state is `reconnecting` until the app returns to the foreground and the scanner connects again.
+     * Pairing goes on, as on iOS.
+     */
+    private fun onAppBackground() {
+        isInForeground = false
+        mainHandler.removeCallbacks(reconnectRunnable)
+        val device = connectedDevice
+        if (device != null) {
+            Log.d(TAG, "App in the background: disconnecting the scanner")
+            val mac = device.address
+            clearConnectionState()
+            closeDevice(device)
+            if (mac != null) reconnectMac = mac
+            channel.invokeMethod("onScannerConnected", false)
+        } else if (reconnectMac != null) {
+            Log.d(TAG, "App in the background: reconnection paused")
+        }
+        emitStateIfChanged()
+    }
+
+    private fun onAppForeground() {
+        isInForeground = true
+        if (reconnectMac == null || connectedDevice != null) return
+        Log.d(TAG, "App in the foreground: reconnecting to the saved scanner")
+        mainHandler.removeCallbacks(reconnectRunnable)
+        attemptReconnect()
     }
 
     // endregion
@@ -724,6 +807,7 @@ class ZebraScannerPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, Plug
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(appLifecycleObserver)
         mainHandler.removeCallbacks(reconnectRunnable)
         reconnectMac = null
         pendingConnectResults.clear()

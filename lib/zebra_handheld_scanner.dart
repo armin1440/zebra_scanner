@@ -105,6 +105,10 @@ class ZebraHandheldScanner {
   /// background (state [ScannerConnectionState.reconnecting]) until the
   /// scanner connects or you call [disconnect] or [forgetScanner].
   /// Calling this method again does not start a second connection.
+  ///
+  /// The scanner is connected only while the app is in the foreground. In the
+  /// background (also when the device is locked) the plugin disconnects it and
+  /// pauses the reconnection, which starts again when the app returns.
   Future<bool> reconnect({Duration timeout = const Duration(seconds: 5)}) {
     return ZebraHandheldScannerPlatform.instance.reconnect(timeout: timeout);
   }

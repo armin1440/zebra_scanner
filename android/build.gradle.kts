@@ -83,6 +83,9 @@ dependencies {
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.mockito:mockito-core:5.0.0")
 
+    // ProcessLifecycleOwner: the scanner is connected only while the app is in the foreground.
+    implementation("androidx.lifecycle:lifecycle-process:2.8.7")
+
     implementation(mapOf("name" to "lw_scanner_auto-release-V1.0.2", "ext" to "aar"))
     implementation(mapOf("name" to "lw_scanner_main-release-V1.1.0", "ext" to "aar"))
 }
